@@ -1,0 +1,107 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile for worker, employer, or administrator",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string", "enum": ["worker", "employer", "administrator"] },
+        "phoneNumber": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "AttendanceRecord": {
+      "title": "AttendanceRecord",
+      "description": "Daily muster attendance record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "workerId": { "type": "string" },
+        "workerPhone": { "type": "string" },
+        "workerName": { "type": "string" },
+        "date": { "type": "string" },
+        "latitude": { "type": "number" },
+        "longitude": { "type": "number" },
+        "locationName": { "type": "string" },
+        "hoursWorked": { "type": "number" },
+        "agreedWage": { "type": "number" },
+        "verificationStatus": { "type": "string" },
+        "verificationToken": { "type": "string" },
+        "tokenHash": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "workerPhone", "date", "verificationStatus"]
+    },
+    "WorkerSummary": {
+      "title": "WorkerSummary",
+      "description": "Pre-aggregated CQRS passbook projection for O(1) worker wage balance queries",
+      "type": "object",
+      "properties": {
+        "phoneNumber": { "type": "string" },
+        "totalDays": { "type": "number" },
+        "totalEarnings": { "type": "number" },
+        "totalPaid": { "type": "number" },
+        "outstandingAmount": { "type": "number" },
+        "lastActive": { "type": "string" },
+        "lastUpdated": { "type": "string" }
+      },
+      "required": ["phoneNumber", "totalDays", "totalEarnings", "outstandingAmount"]
+    },
+    "IngressJob": {
+      "title": "IngressJob",
+      "description": "Asynchronous ingress stream job with provisional token",
+      "type": "object",
+      "properties": {
+        "jobId": { "type": "string" },
+        "phoneNumber": { "type": "string" },
+        "status": { "type": "string", "enum": ["queued", "processing", "completed", "dead_letter"] },
+        "provisionalToken": { "type": "string" },
+        "enqueuedAt": { "type": "string" },
+        "processedAt": { "type": "string" }
+      },
+      "required": ["jobId", "phoneNumber", "status", "provisionalToken", "enqueuedAt"]
+    },
+    "Dispute": {
+      "title": "Dispute",
+      "description": "Wage dispute claim registered on behalf of worker",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "workerPhone": { "type": "string" },
+        "contractorName": { "type": "string" },
+        "claimedAmount": { "type": "number" },
+        "workLocation": { "type": "string" },
+        "status": { "type": "string" },
+        "assignedTo": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "workerPhone", "contractorName", "claimedAmount", "status"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Individual user accounts"
+    },
+    "/attendance_records/{recordId}": {
+      "schema": "AttendanceRecord",
+      "description": "Muster attendance logs"
+    },
+    "/worker_summaries/{workerPhone}": {
+      "schema": "WorkerSummary",
+      "description": "Materialized passbook summaries for instant O(1) reads"
+    },
+    "/ingress_jobs/{jobId}": {
+      "schema": "IngressJob",
+      "description": "Asynchronous ingress stream job tracking"
+    },
+    "/disputes/{disputeId}": {
+      "schema": "Dispute",
+      "description": "Labor wage disputes"
+    }
+  }
+}
