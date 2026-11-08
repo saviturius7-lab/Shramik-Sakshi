@@ -1,0 +1,464 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --vellum-canvas: #fbf8ef;
+  --vellum-secondary: #f4ede0;
+  --carbon-ink: #19231f;
+  --carbon-muted: #3d4a44;
+  --reg-green: #1b4332;
+  --reg-green-light: #2d6a4f;
+  --brass-gold: #c29437;
+  --brass-dark: #8c6721;
+  --seal-red: #9b2226;
+  --seal-red-light: #ae2012;
+}
+
+body {
+  margin: 0;
+  /* Realistic Pink-Yellow Sunset Sky into Endless Green Field fallback */
+  background: linear-gradient(180deg, #d88ba8 0%, #fca091 35%, #ffd066 60%, #40916c 100%);
+  background-attachment: fixed;
+  color: #19231f;
+  font-family: 'Inter', 'Noto Sans Devanagari', 'Noto Sans Kannada', 'Noto Sans Telugu', 'Noto Sans Tamil', 'Noto Sans Malayalam', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  min-height: 100vh;
+  line-height: 1.5;
+  font-size: 15px;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* --------------------------------------------------------------------------------
+   WHIMSICAL DOLLHOUSE & STORYBOOK COTTAGE AESTHETIC
+-------------------------------------------------------------------------------- */
+
+/* Scalloped Roof Trim Variants */
+.roof-scallops {
+  background-image: radial-gradient(circle at 10px 0, #1e7587 10px, transparent 11px);
+  background-size: 20px 10px;
+  background-repeat: repeat-x;
+  height: 10px;
+  width: 100%;
+}
+
+.roof-scallops-pink {
+  background-image: radial-gradient(circle at 10px 0, #e8638b 10px, transparent 11px);
+  background-size: 20px 10px;
+  background-repeat: repeat-x;
+  height: 10px;
+  width: 100%;
+}
+
+.roof-scallops-green {
+  background-image: radial-gradient(circle at 10px 0, #2d6a4f 10px, transparent 11px);
+  background-size: 20px 10px;
+  background-repeat: repeat-x;
+  height: 10px;
+  width: 100%;
+}
+
+.roof-scallops-gold {
+  background-image: radial-gradient(circle at 10px 0, #c29437 10px, transparent 11px);
+  background-size: 20px 10px;
+  background-repeat: repeat-x;
+  height: 10px;
+  width: 100%;
+}
+
+@keyframes gentleFloat {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+.animate-gentle-float {
+  animation: gentleFloat 4s ease-in-out infinite;
+}
+
+
+/* Whimsical Comic Card with playful thick ink line */
+.comic-card {
+  background-color: #ffffff;
+  border: 2.5px solid #232b28;
+  border-radius: 18px;
+  box-shadow: 4px 4px 0px #232b28;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+}
+
+.comic-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 5px 5px 0px #232b28;
+}
+
+/* Tactile Civic Ledger Card */
+.civic-card {
+  background-color: #ffffff;
+  border: 2px solid #232b28;
+  border-radius: 14px;
+  box-shadow: 3.5px 3.5px 0px #232b28;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+}
+
+.civic-card:hover {
+  box-shadow: 4px 4px 0px rgba(28, 36, 33, 0.28);
+}
+
+/* Regulatory Masthead Trim */
+.civic-masthead {
+  background-color: #1b4332;
+  color: #ffffff;
+  border-bottom: 2px solid #1c2421;
+}
+
+/* Archival Risograph Vellum Sheet */
+.vellum-sheet {
+  background-color: #fcfbfa;
+  border: 1.5px solid #1c2421;
+  border-radius: 6px;
+  box-shadow: 3px 3px 0px rgba(28, 36, 33, 0.16);
+  background-image: radial-gradient(rgba(27, 67, 50, 0.05) 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+
+/* Brass Telegraph Accents */
+.brass-gauge-panel {
+  background: linear-gradient(135deg, #f9f4e8 0%, #ede3cb 100%);
+  border: 2px solid #8c6721;
+  box-shadow: inset 1px 1px 0px #fff, 2px 2px 0px rgba(28, 36, 33, 0.2);
+}
+
+.brass-badge {
+  background-color: #8c6721;
+  color: #fffef8;
+  border: 1px solid #1c2421;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+}
+
+/* --------------------------------------------------------------------------------
+   OFFICIAL SECTION 65B RUBBER STAMP IMPRESSIONS
+-------------------------------------------------------------------------------- */
+
+.rubber-stamp-verified {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-weight: 900;
+  font-size: 11px;
+  color: #1b4332;
+  background-color: #e8f5e9;
+  border: 2px solid #1b4332;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  transform: rotate(-1.5deg);
+  box-shadow: 2px 2px 0px rgba(27, 67, 50, 0.25);
+}
+
+.rubber-stamp-disputed {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-weight: 900;
+  font-size: 11px;
+  color: #9b2226;
+  background-color: #ffebee;
+  border: 2px dashed #9b2226;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  transform: rotate(1.8deg);
+  box-shadow: 2px 2px 0px rgba(155, 34, 38, 0.25);
+}
+
+.rubber-stamp-pending {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-weight: 900;
+  font-size: 11px;
+  color: #8c6721;
+  background-color: #fff9c4;
+  border: 1.5px solid #8c6721;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  transform: rotate(-0.8deg);
+}
+
+.rubber-stamp-sec65b {
+  display: inline-block;
+  padding: 6px 12px;
+  font-weight: 900;
+  font-size: 11px;
+  color: #1b4332;
+  border: 3px double #1b4332;
+  border-radius: 5px;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  transform: rotate(-3deg);
+  background-color: rgba(232, 245, 233, 0.85);
+  box-shadow: 2px 2px 0px rgba(27, 67, 50, 0.2);
+}
+
+/* --------------------------------------------------------------------------------
+   HIGH-CONTRAST CIVIC BUTTONS
+-------------------------------------------------------------------------------- */
+
+.civic-btn-primary {
+  background-color: #1b4332;
+  color: #ffffff;
+  border: 1.5px solid #1c2421;
+  border-radius: 5px;
+  box-shadow: 2.5px 2.5px 0px #1c2421;
+  font-weight: 800;
+  transition: all 0.15s ease-out;
+}
+
+.civic-btn-primary:hover {
+  background-color: #2d6a4f;
+  box-shadow: 3.5px 3.5px 0px #1c2421;
+}
+
+.civic-btn-primary:active {
+  transform: translate(1px, 1px);
+  box-shadow: 1px 1px 0px #1c2421;
+}
+
+.civic-btn-secondary {
+  background-color: #f7f3e8;
+  color: #1c2421;
+  border: 1.5px solid #1c2421;
+  border-radius: 5px;
+  box-shadow: 2px 2px 0px #1c2421;
+  font-weight: 700;
+  transition: all 0.15s ease-out;
+}
+
+.civic-btn-secondary:hover {
+  background-color: #ede5cf;
+  box-shadow: 3px 3px 0px #1c2421;
+}
+
+.civic-btn-secondary:active {
+  transform: translate(1px, 1px);
+  box-shadow: 1px 1px 0px #1c2421;
+}
+
+.civic-btn-danger {
+  background-color: #9b2226;
+  color: #ffffff;
+  border: 1.5px solid #1c2421;
+  border-radius: 5px;
+  box-shadow: 2.5px 2.5px 0px #1c2421;
+  font-weight: 800;
+  transition: all 0.15s ease-out;
+}
+
+.civic-btn-danger:hover {
+  background-color: #ae2012;
+  box-shadow: 3.5px 3.5px 0px #1c2421;
+}
+
+.civic-btn-danger:active {
+  transform: translate(1px, 1px);
+  box-shadow: 1px 1px 0px #1c2421;
+}
+
+.civic-btn-brass {
+  background-color: #8c6721;
+  color: #ffffff;
+  border: 1.5px solid #1c2421;
+  border-radius: 5px;
+  box-shadow: 2.5px 2.5px 0px #1c2421;
+  font-weight: 800;
+  transition: all 0.15s ease-out;
+}
+
+.civic-btn-brass:hover {
+  background-color: #a47827;
+  box-shadow: 3.5px 3.5px 0px #1c2421;
+}
+
+.civic-btn-brass:active {
+  transform: translate(1px, 1px);
+  box-shadow: 1px 1px 0px #1c2421;
+}
+
+/* --------------------------------------------------------------------------------
+   A4 PRINT SPECIFICATIONS FOR ₹2 CSC (COMMON SERVICE CENTRE) PASSBOOK
+-------------------------------------------------------------------------------- */
+
+@media print {
+  body {
+    background-color: #ffffff !important;
+    background-image: none !important;
+    color: #000000 !important;
+    font-size: 11pt !important;
+  }
+
+  /* Hide navigation, background canvas, action buttons during printing */
+  header, 
+  nav, 
+  footer,
+  aside,
+  .no-print,
+  button:not(.print-include) {
+    display: none !important;
+  }
+
+  /* Force printable passbook section to full width */
+  .printable-passbook {
+    display: block !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+
+  .civic-card, .vellum-sheet {
+    box-shadow: none !important;
+    border: 1px solid #333333 !important;
+    page-break-inside: avoid;
+  }
+}
+
+/* Leaflet Container in Archival Tint */
+.leaflet-container {
+  filter: contrast(105%) saturate(105%) !important;
+  background: #f4ede0 !important;
+  border: 1.5px solid #1c2421 !important;
+  border-radius: 6px;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f4ede0;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1b4332;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #2d6a4f;
+}
+
+/* Compatibility Mappings for Clean Civic Ledger Aesthetic */
+.comic-card, .comic-card-wobble-1, .comic-card-wobble-2, .comic-card-wobble-3 {
+  background-color: #ffffff;
+  border: 1.5px solid #1c2421;
+  border-radius: 6px;
+  box-shadow: 3px 3px 0px rgba(28, 36, 33, 0.2);
+}
+
+.comic-inset {
+  background-color: #fcfbf7;
+  border: 1px solid rgba(28, 36, 33, 0.25);
+  border-radius: 5px;
+}
+
+.comic-btn-emerald, .comic-btn-teal {
+  background-color: #1b4332;
+  color: #ffffff;
+  border: 1.5px solid #1c2421;
+  border-radius: 5px;
+  box-shadow: 2px 2px 0px #1c2421;
+  font-weight: 700;
+  transition: all 0.15s ease-out;
+}
+.comic-btn-emerald:hover, .comic-btn-teal:hover {
+  background-color: #2d6a4f;
+  box-shadow: 3px 3px 0px #1c2421;
+}
+
+.comic-btn-cream {
+  background-color: #f7f3e8;
+  color: #1c2421;
+  border: 1.5px solid #1c2421;
+  border-radius: 5px;
+  box-shadow: 2px 2px 0px #1c2421;
+  font-weight: 700;
+  transition: all 0.15s ease-out;
+}
+.comic-btn-cream:hover {
+  background-color: #ede5cf;
+}
+
+.comic-btn-pink {
+  background-color: #9b2226;
+  color: #ffffff;
+  border: 1.5px solid #1c2421;
+  border-radius: 5px;
+  box-shadow: 2px 2px 0px #1c2421;
+  font-weight: 700;
+}
+.comic-btn-pink:hover {
+  background-color: #ae2012;
+}
+
+.stamp-acknowledged {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  font-weight: 800;
+  color: #1b4332;
+  background-color: #e8f5e9;
+  border: 1.5px solid #1b4332;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.stamp-submitted {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  font-weight: 800;
+  color: #8c6721;
+  background-color: #fff9c4;
+  border: 1.5px solid #8c6721;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.stamp-disputed {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  font-weight: 800;
+  color: #9b2226;
+  background-color: #ffebee;
+  border: 1.5px dashed #9b2226;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+* {
+  overflow-wrap: break-word;
+}
+
