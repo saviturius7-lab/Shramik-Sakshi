@@ -32,9 +32,19 @@ import { ingressBuffer } from './src/services/ingressBuffer.ts';
 import { getMaterializedSummary, warmupSummaries } from './src/services/cqrsMaterializer.ts';
 
 const app = express();
-const isProduction = process.env.NODE_ENV === 'production' && !process.env.VITE_DEV;
-// In AI Studio development, runtime proxy strictly requires dev server to listen on port 3000
-const PORT = isProduction ? (process.env.PORT ? parseInt(process.env.PORT, 10) : 8080) : 3000;
+
+// Determine runtime environment:
+// AI Studio development server always executes with '--port 3000' CLI argument or npm_lifecycle_event === 'dev'
+const cliPortArg = process.argv.indexOf('--port');
+const cliPort = cliPortArg !== -1 && process.argv[cliPortArg + 1] ? parseInt(process.argv[cliPortArg + 1], 10) : null;
+
+const isDevMode = cliPort === 3000 || process.env.npm_lifecycle_event === 'dev' || process.env.VITE_DEV === 'true';
+const isProduction = !isDevMode;
+
+// Port priority:
+// In AI Studio local dev environment, listen on 3000 (proxied by internal dev ingress)
+// In Cloud Run production deployment, listen on PORT env var (Cloud Run sets PORT=8080)
+const PORT = isDevMode ? 3000 : (process.env.PORT ? parseInt(process.env.PORT, 10) : 8080);
 const HOST = '0.0.0.0';
 
 // Global Enterprise Middleware
@@ -1328,12 +1338,24 @@ async function startServer() {
   warmupSummaries(readWorkLogsFile());
 
   const distPath = path.resolve('dist');
+  const indexHtmlPath = path.join(distPath, 'index.html');
+
+  if (isProduction && !fs.existsSync(indexHtmlPath)) {
+    console.log('[Shramik Sakshi] dist/index.html not found, compiling production bundle on the fly...');
+    try {
+      const { build } = await import('vite');
+      await build();
+      console.log('[Shramik Sakshi] Production bundle compiled successfully.');
+    } catch (buildErr) {
+      console.error('[Shramik Sakshi] On-the-fly bundle compilation failed:', buildErr);
+    }
+  }
 
   if (!isProduction) {
     // Development mode: Always mount Vite middleware in development
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
-      server: { middlewareMode: true, hmr: false },
+      server: { middlewareMode: true, hmr: false, ws: false },
       appType: 'spa',
     });
     app.use(vite.middlewares);
@@ -1342,14 +1364,37 @@ async function startServer() {
     app.use(express.static(distPath));
     app.use((req, res, next) => {
       if (req.path.startsWith('/api') || req.path === '/webhook') return next();
-      res.sendFile(path.join(distPath, 'index.html'));
+      res.sendFile(indexHtmlPath);
     });
   }
 
   // Listen on PORT (strictly 3000 in dev per AI Studio runtime environment requirements)
-  app.listen(PORT, HOST, () => {
+  const server = app.listen(PORT, HOST, () => {
     console.log(`[Shramik Sakshi] Server active on http://${HOST}:${PORT} (mode: ${isProduction ? 'production' : 'development'})`);
+  });
+
+  server.on('error', (err: any) => {
+    if (err.code === 'EADDRINUSE') {
+      console.warn(`[Shramik Sakshi] Port ${PORT} busy, retrying in 2s...`);
+      setTimeout(() => {
+        try { server.close(); } catch {}
+        try { server.listen(PORT, HOST); } catch {}
+      }, 2000);
+    } else {
+      console.error('[Shramik Sakshi] HTTP Server error:', err);
+    }
   });
 }
 
-startServer();
+// Global safety guards for continuous development runtime
+process.on('uncaughtException', (err) => {
+  console.warn('[Shramik Sakshi] Process caught unhandled exception (prevented crash):', err.message || err);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.warn('[Shramik Sakshi] Process caught unhandled rejection (prevented crash):', reason);
+});
+
+startServer().catch((err) => {
+  console.error('[Shramik Sakshi] Fatal error starting server:', err);
+});

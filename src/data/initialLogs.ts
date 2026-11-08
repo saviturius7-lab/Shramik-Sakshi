@@ -1,4 +1,4 @@
-import { WorkLog } from '../types';
+import type { WorkLog } from '../types.ts';
 
 export const INITIAL_WORK_LOGS: WorkLog[] = [
   {
