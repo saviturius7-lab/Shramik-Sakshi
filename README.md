@@ -14,6 +14,100 @@
 
 ---
 
+## Academic Project Information
+
+**Project category:** Student software engineering project  
+**Project domain:** Civic technology, labour welfare, attendance management, and wage transparency  
+**Project name:** Shramik Sakshi (श्रमिक साक्षी)  
+**Repository:** [saviturius7-lab/Shramik-Sakshi](https://github.com/saviturius7-lab/Shramik-Sakshi)  
+**Application format:** Responsive web application with Progressive Web App (PWA) support  
+**Primary intended users:** Informal and daily-wage workers, site supervisors/employers, and administrative or support personnel
+
+### Project Abstract
+
+Shramik Sakshi is a student-developed civic technology project that explores how a simple digital work ledger can improve the recording, review, and communication of attendance and wage information for informal and daily-wage workers. The application brings worker registration, shift attendance, wage calculations, digital receipts, worker summaries, worksite information, and dispute intake into one interface.
+
+The project focuses on practical constraints commonly found in field environments: intermittent connectivity, limited digital literacy, multilingual usage, and unequal access to employment records. It combines a React-based client application with an Express and TypeScript backend, local persistence options, optional PostgreSQL integration, and PWA capabilities.
+
+The system is intended as a prototype and academic demonstration of these workflows. It is not an officially approved government platform, a replacement for statutory employer registers, a payment service, or a legal authority that determines whether a claim is admissible or proven.
+
+### Project Objectives
+
+- Provide a straightforward way to register workers and associate them with a trade, worksite, and agreed wage.
+- Record attendance events and, where available, supporting location information.
+- Represent shift duration and wage calculations in a worker-readable ledger.
+- Make attendance and wage information reviewable by workers and authorized supervisory or administrative roles.
+- Provide digital receipts and a structured record of wage-related disputes.
+- Support multilingual interface text and speech output for selected Indian languages.
+- Explore offline-capable web application patterns and synchronization when connectivity returns.
+- Demonstrate maintainable frontend, backend, persistence, validation, and testing practices in a single student project.
+
+### Intended Users and Their Workflows
+
+| User / Role | Intended workflow | Relevant application areas |
+| :--- | :--- | :--- |
+| Worker | Register, record a shift, review attendance and wage entries, and retain a digital receipt | Labour registration, Shramik Card, sign-in/sign-off, worker profile, receipts |
+| Employer / Site supervisor | Review submitted attendance and acknowledge or flag records | Attendance ledger, acknowledgement and dispute actions |
+| Administrator | Review records and disputes and perform administrative operations | Administrative views, dispute status, controlled reset operation |
+| NGO / Labour-support personnel | Use worker records and dispute information as an assistance workflow | Worker summaries, ledger views, dispute records |
+
+The available role checks and screens are implementation features; actual access in a deployed environment depends on the configured authentication provider, role assignment, and server-side authorization.
+
+### Typical End-to-End Workflow
+
+1. **Worker registration:** A worker's basic details, contact number, trade, worksite, and agreed wage are entered into the registration flow.
+2. **Worker identification:** The application creates a worker record and displays a Shramik Card / QR-oriented identification view.
+3. **Shift check-in:** The worker submits an attendance event. The application can include device location when permission and device support are available.
+4. **Shift check-out:** A later sign-off event is used to calculate the recorded shift duration and the corresponding wage estimate.
+5. **Record review:** The attendance ledger and worker profile present submitted entries, wage totals, payment information, and verification status.
+6. **Supervisor review:** An employer or authorized role can acknowledge or flag an attendance record through the available review action.
+7. **Receipt and dispute handling:** The worker can view or print a digital receipt, while a wage-related concern can be submitted through the guided dispute workflow.
+8. **Synchronization:** When offline functionality is available, locally retained records can be synchronized with the backend after connectivity is restored.
+
+This workflow describes the intended application journey. It does not imply that every step is independently verified by an external authority.
+
+### Technology Stack
+
+| Layer | Technologies used | Responsibility |
+| :--- | :--- | :--- |
+| Frontend | React 18, TypeScript, Vite | User interface, application state, and client-side workflows |
+| Styling / UI | Tailwind CSS, Lucide React | Layout, visual components, and interface icons |
+| Backend | Node.js, Express 5, TypeScript | HTTP API, request handling, business rules, and server-side workflows |
+| Data validation | Zod | Validation of selected attendance, phone, and dispute payloads |
+| Relational persistence | PostgreSQL, Drizzle ORM, pg | Structured persistence when database configuration is supplied |
+| Local persistence | JSON file storage and atomic-write service | Local ledger persistence / fallback path |
+| Authentication | Firebase client and Firebase Admin integration | Authentication token handling and role-aware authorization |
+| Offline / PWA | vite-plugin-pwa, Workbox, service workers, IndexedDB | Installability, asset caching, and offline-oriented client workflows |
+| Maps | Leaflet | Worksite and location visualization |
+| QR codes | qrcode.react | QR-oriented worker identification and receipt presentation |
+| Testing / execution | tsx, TypeScript compiler | Running the automated test file and type-checking |
+
+### Main Functional Modules
+
+- **Worker registration and identity:** Captures worker details and creates an application-level worker identifier.
+- **Attendance ledger:** Stores attendance submissions and exposes check-in / check-out-oriented workflows.
+- **Wage accounting:** Calculates displayed earnings from recorded shift information and agreed wage inputs; presents paid and outstanding amounts where those values are available.
+- **Digital receipts:** Presents a printable record of an attendance or wage event, including verification-related metadata.
+- **Dispute intake:** Guides a user through entering contractor details and a claimed amount, then creates a case reference for follow-up.
+- **Supervisor review:** Supports acknowledgement or dispute status actions for submitted attendance records.
+- **Worker summaries:** Aggregates recorded workdays, earnings, payments, and outstanding balances for display.
+- **Multilingual assistance:** Provides translated interface strings and speech synthesis support for English, Hindi, Kannada, Telugu, Tamil, and Malayalam, subject to browser voice availability.
+- **Location visualization:** Displays available worksite or attendance coordinates on a map. Location access is permission-dependent.
+- **PWA installation and offline support:** Provides installability and client-side caching / queued synchronization mechanisms where supported by the browser and deployment configuration.
+
+### Design Considerations
+
+The project is organized around several design considerations:
+
+- **Low-friction interaction:** Keep common worker actions close to the primary application interface.
+- **Readable records:** Present attendance, duration, wage, and review state as ledger-style information rather than requiring users to interpret raw database data.
+- **Intermittent connectivity:** Separate local client-side record handling from server synchronization so the interface can support an offline-oriented workflow.
+- **Traceability:** Retain identifiers, timestamps, status changes, and audit-related metadata for later review.
+- **Role separation:** Distinguish worker-facing actions from employer and administrator operations.
+- **Modular implementation:** Keep UI components, services, middleware, database schema, language resources, and tests in separate areas of the codebase.
+
+---
+
 ## 📲 Live Application & Progressive Web App (PWA)
 
 | Environment | Access Link | Protocol / Port |
@@ -342,3 +436,126 @@ Shramik Sakshi is architected in reference to Indian labor welfare statutes:
 ## 9. License
 
 This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) file for details.
+
+
+---
+
+## 10. Academic Scope, Implementation Notes & Limitations
+
+This section documents the project's intended scope and the boundaries that should be considered when evaluating or demonstrating it.
+
+### 10.1. Prototype and Deployment Status
+
+Shramik Sakshi is a student project / working prototype. A reachable hosted URL demonstrates that an application instance has been deployed; it does not, by itself, establish production-grade operational readiness, independent security certification, statutory approval, or suitability for processing real workers' sensitive information at scale.
+
+The repository includes development and deployment configuration for a hosted environment. Availability of the hosted instance, configured secrets, database provisioning, authentication configuration, and deployment state may change over time. The source repository is the primary reference for the implementation.
+
+### 10.2. Legal and Evidentiary Boundaries
+
+The application can preserve submitted attendance information and associated metadata such as timestamps, coordinates, record identifiers, and review status. Cryptographic hashes and audit metadata can help detect certain forms of alteration when implemented and operated correctly.
+
+However:
+
+- A GPS coordinate is not proof that a person performed a full shift or performed work at a particular site.
+- A timestamp or application-generated receipt is not, by itself, a judicial finding or a guarantee of admissibility.
+- A hash or token does not establish that the original information was truthful when submitted.
+- Supervisor acknowledgement, corroborating records, custody procedures, system integrity, and applicable legal requirements may all matter when a record is relied upon in a formal proceeding.
+- The project's references to Section 63 of the Bharatiya Sakshya Adhiniyam, 2023 and labour-register rules are design references, not a claim of legal certification or compliance approval.
+
+The application should therefore be described as a record-keeping and evidence-support prototype, not as a system that independently produces court-admissible proof or enforces statutory rights.
+
+### 10.3. Wage Rules Are Configured Application Logic
+
+The half-day, standard-day, and overtime calculations described in this README are application-level calculation rules. Actual wage entitlements depend on the applicable central or state rules, worker category, notified wage rate, employment arrangement, working hours, exemptions, and other facts. The configured thresholds and rates must not be treated as a universal legal interpretation.
+
+Before any real-world use, the calculation logic should be reviewed against the applicable jurisdiction and current notifications by a qualified labour-law professional or relevant authority.
+
+### 10.4. Offline Operation and Synchronization
+
+Offline support is designed to improve continuity when a worker temporarily loses connectivity. Browser storage, service-worker caching, and queued synchronization have limitations:
+
+- Browser storage may be cleared, evicted, unavailable in private browsing, or lost if the device is reset.
+- A queued event is not necessarily a server-accepted or permanently committed record until synchronization is confirmed.
+- Reconciliation can encounter duplicate submissions, stale data, clock differences, or conflicting updates.
+- Device timestamps and device location are not inherently trusted.
+- Offline operation depends on browser capabilities, permissions, storage availability, and the deployed service-worker configuration.
+
+For important records, users should retain receipts and verify that pending entries have synchronized successfully.
+
+### 10.5. Authentication, Privacy, and Operational Security
+
+The repository contains Firebase authentication integration, server-side token handling, role checks, request validation, rate limiting, and idempotency-related middleware. These are useful security building blocks, but their presence does not amount to a completed security audit.
+
+Before using real personal or employment data, the project requires a deployment-specific review covering at least:
+
+- Firebase project configuration, identity verification, and secure role assignment.
+- Authorization checks on every sensitive endpoint, including protection against users accessing another worker's records.
+- Secure secret management and rotation; credentials must not be committed to the repository.
+- Transport security, CORS policy, request limits, logging, backups, and database access controls.
+- Data minimization, retention and deletion policy, consent, and access to phone numbers, location data, wage details, and dispute records.
+- Abuse prevention, audit-log protection, incident response, and recovery testing.
+
+The application should be tested with synthetic data during demonstrations. Do not upload Aadhaar numbers, real worker contact details, precise personal location histories, or genuine wage-dispute information to an unreviewed deployment.
+
+### 10.6. Persistence and Deployment Configuration
+
+The codebase supports a PostgreSQL-backed path when the required database environment variables are configured and also contains local file-based persistence mechanisms. These modes have different durability, concurrency, backup, and operational characteristics. A local JSON fallback should not be presented as equivalent to a managed relational database in a multi-instance production deployment.
+
+The actual persistence path depends on runtime configuration. A deployment intended for real users should explicitly configure and test its database, migrations, backup and restore procedures, and behaviour during database or network failures.
+
+### 10.7. Test Coverage: What the Current Suite Demonstrates
+
+The current automated suite is run using npm test and contains 12 test cases. The cases exercise selected validation, wage-summary calculations, role-gate logic, dispute-flow behaviour, atomic file mutation, rate limiting, ingress-buffer behaviour, materialized summaries, and offline-log-related logic.
+
+The test suite is a focused project-level verification suite, not a comprehensive quality or security certification. In particular, passing unit-level tests does not prove:
+
+- End-to-end correctness across every browser, device, and network condition.
+- Real-world throughput or latency under a production workload.
+- Correctness of every legal or statutory interpretation.
+- Resistance to GPS spoofing, compromised devices, malicious clients, or privileged insiders.
+- Correctness of all authentication and authorization paths in a fully configured deployment.
+- Durability and conflict-free synchronization under every offline/online transition.
+
+Performance figures in the feature descriptions should be understood as implementation targets or local test observations unless they are supported by repeatable, documented load tests in a representative deployment.
+
+### 10.8. Known Areas for Further Development
+
+The following are meaningful next steps for the project:
+
+1. Add end-to-end tests for worker, employer, and administrator journeys.
+2. Add authorization tests that verify record ownership and prevent cross-worker data access.
+3. Add repeatable load tests for ingress processing, queue recovery, and database-backed operation.
+4. Define and test robust idempotency and conflict-resolution behaviour across multiple devices.
+5. Add a clear synchronization state model: locally saved, queued, submitted, accepted, rejected, and requiring review.
+6. Validate wage calculations against configurable jurisdiction-specific rules rather than fixed assumptions.
+7. Add database migration, backup, restore, and multi-instance deployment documentation.
+8. Introduce privacy controls, retention settings, and user-facing data export / deletion workflows.
+9. Improve accessibility testing for screen readers, low-end Android devices, keyboard navigation, and multilingual text rendering.
+10. Conduct an independent security and legal review before any real-world deployment.
+
+---
+
+## 11. Suggested Academic Demonstration Plan
+
+For a classroom review, project exhibition, or technical presentation, the following sequence communicates the system without overstating its capabilities:
+
+1. Introduce the problem of fragmented attendance and wage records in informal work arrangements.
+2. Explain the intended users and the worker / supervisor / administrator roles.
+3. Demonstrate worker registration and the generated worker identity view using sample data.
+4. Record a check-in and check-out, then explain the displayed duration and wage calculation.
+5. Open the worker ledger and show how earnings, payments, and outstanding amounts are represented.
+6. Demonstrate supervisor acknowledgement or dispute handling.
+7. Show the digital receipt and explain what information it records.
+8. Demonstrate the multilingual interface and PWA installation / offline-oriented experience.
+9. Briefly explain the frontend, backend, persistence options, and selected tests.
+10. Conclude with the current limitations and the work required before real-world deployment.
+
+Use synthetic demonstration records and clearly label any seeded sample data.
+
+---
+
+## 12. Project Disclaimer
+
+Shramik Sakshi is an educational software project developed to explore digital attendance records, wage transparency, multilingual field interfaces, and offline-capable application design. It is not affiliated with, endorsed by, or operated by any government department unless a separate formal authorization is obtained. It does not provide legal advice, determine employment status, guarantee wage recovery, process wage payments, or certify evidence for court proceedings.
+
+All sample names, phone numbers, worksite details, attendance records, and wage figures included for demonstration should be treated as illustrative data. Users and deployers are responsible for verifying applicable laws, obtaining appropriate consent, protecting personal information, and assessing operational suitability before any real-world use.
