@@ -121,11 +121,16 @@ Across the informal economy, over **450 million unorganized and daily-wage labor
   - Telugu (`te-IN` — తెలుగు)
   - Tamil (`ta-IN` — தமிழ்)
   - Malayalam (`ml-IN` — മലയാളം)
-- **Field Telegraph Station**: Emulates telegram and SMS punch dispatches with immediate receipt rendering, live counter telemetry, and shift action controls.
-- **WhatsApp Simulator Modal**: Demonstrates zero-app conversational punch capture via simulated WhatsApp and Twilio messaging webhook integrations (`POST /api/webhook`).
+- **All-in-One Standalone Operation**: Zero WhatsApp connection or third-party messaging apps required. From worker self-registration and Shramik Labour Card issuance to shift sign-in, live duty tracking, shift sign-off, official court-admissible slips, and wage hisaab passbooks—all actions are completed 100% inside this single app.
+- **Labour Registration Desk**: Instant on-site worker registration under BOCW Form 1 rules with trade skills (mason, helper, carpenter, electrician, plumber, etc.), agreed daily wage, worksite, emergency contact, and instant Shramik Card generation with QR verification.
+- **Direct Shift Sign-In & Sign-Off**:
+  - **🟢 Sign In (ड्यूटी शुरू)**: Locks arrival time, captures tamper-evident GPS coordinates, and initializes active shift timer.
+  - **Live Duty Ticker**: Real-time elapsed duration and statutory wage accrual display.
+  - **🔴 Sign Off (छुट्टी दर्ज करें)**: Computes exact duration, statutory half-day (<4h @ 50%), full-day, and overtime (>8.5h @ 2x rate) wages, immediately generating the finalized official slip.
 - **Interactive Live GIS Map**: Leaflet-powered geolocation view plotting active laborer worksites with accuracy rings and status color codes.
-- **Dual Guided Onboarding Walkthroughs**: Role-tailored interactive tutorials covering worker self-registration, punch creation, receipt generation, and supervisor muster confirmation.
+- **Dual Guided Onboarding Walkthroughs**: Role-tailored interactive tutorials covering worker self-registration, shift punch creation, receipt generation, and supervisor muster confirmation.
 - **Craig Reynolds 2D Flocking Simulation**: A dynamic twilight sky canvas with flocking boids behind the ledger, toggleable with a single-click "Zen Field Mode".
+
 
 ### 3.4. Dual-Tier Resilient Storage Architecture
 - **Primary Tier: Cloud SQL PostgreSQL (`src/db/`)**:
@@ -153,19 +158,20 @@ Across the informal economy, over **450 million unorganized and daily-wage labor
 │   ├── types.ts                 # Full TypeScript definitions (WorkLog, WorkerSummary, UserRole, etc.)
 │   │
 │   ├── components/
-│   │   ├── Header.tsx           # Civic masthead, language dropdown, role switcher & Android PWA install trigger
-│   │   ├── FieldTelegraphStation.tsx # Punch dispatch console with dual-punch (IN/OUT) shift controls
+│   │   ├── Header.tsx           # Civic masthead, language dropdown, role switcher, labour registration & shift indicator
+│   │   ├── FieldTelegraphStation.tsx # Shift ingress/egress desk with dual-punch (SIGN IN / SIGN OFF) controls
+│   │   ├── LabourRegistrationModal.tsx # Full in-app worker registration with Shramik Card & QR generation
 │   │   ├── LedgerTable.tsx      # Form V muster roll register with official Section 63 BSA rubber stamps
 │   │   ├── MetricsOverview.tsx  # KPI cards: Active Workers, Total Workdays, Secured Capital, Outstanding Wages
 │   │   ├── WorkerProfile.tsx    # Digital Passbook summary, wage reconciliation & evidentiary receipt drawer
 │   │   ├── LiveMap.tsx          # Leaflet GIS interactive worksite pin clustering & GPS radius visualizer
-│   │   ├── DigitalReceiptModal.tsx   # Formal Section 63 BSA Certificate Slip with QR code & WhatsApp share
+│   │   ├── DigitalReceiptModal.tsx   # Formal Section 63 BSA Certificate Slip with QR code & print capability
 │   │   ├── NetworkSyncRibbon.tsx     # Real-time connectivity monitor & background IndexedDB sync progress bar
 │   │   ├── AndroidInstallModal.tsx   # Native Android installation guide with QR code desktop-to-mobile bridge
 │   │   ├── TutorialModal.tsx         # Multilingual step-by-step onboarding walkthrough (Worker vs Admin)
-│   │   ├── WhatsAppSimulatorModal.tsx# Field WhatsApp conversational punch simulator
 │   │   ├── BoidsCanvas.tsx      # 2D flocking simulation background with Zen Mode controls
 │   │   └── Sidebar.tsx          # Quick actions drawer and role-based operational controls
+
 │   │
 │   ├── services/
 │   │   ├── ingressBuffer.ts     # Asynchronous high-throughput queue with provisional token issuance (Tip 1)
@@ -243,12 +249,13 @@ npm test
 | `GET` | `/readyz` | Public | Readiness probe reporting storage and database connectivity |
 | `GET` | `/api/status` | Public | System status, database engine, log count, and webhook URL |
 | `GET` | `/api/metrics` | Authenticated | Server metrics, active connections, and latency percentiles |
-| `GET` | `/api/logs` | Authenticated | Retrieves attendance muster roll entries |
-| `POST` | `/api/attendance` | Authenticated | Records an attendance punch with GPS coordinates or preset |
-| `POST` | `/api/attendance/checkout` | Authenticated | Records shift check-out, sealing duration and calculating wages |
+| `GET` | `/api/workers` | Public | Retrieves all registered labourers with trades, daily wages, and worksites |
+| `POST` | `/api/workers/register` | Public | Registers a new labourer, issues Shramik ID (`SHR-2026-XXXX`), and creates user profile |
+| `POST` | `/api/attendance` | Authenticated | Records shift sign-in / ingress with GPS coordinates or worksite preset |
+| `POST` | `/api/attendance/checkout` | Authenticated | Records shift sign-off / egress, sealing duration and calculating wages |
 | `POST` | `/api/attendance/action` | Employer, Admin | Acknowledges (`attendance_acknowledged`) or disputes a punch |
 | `POST` | `/api/dispatch` | Authenticated | Field Telegraph submission processed via deterministic DFSA engine |
-| `POST` | `/api/webhook` | Public | Twilio WhatsApp incoming message webhook handler |
+
 
 ### Scalability Engine Endpoints (Tips 1, 2, 3)
 | Method | Endpoint | Authorization | Description |

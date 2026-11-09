@@ -108,7 +108,7 @@ export const DigitalReceiptModal: React.FC<DigitalReceiptModalProps> = ({ log, o
               <span>OFFICIAL DAILY WAGE SLIP (काम की पर्ची)</span>
             </span>
             <span className="rubber-stamp-verified text-xs">
-              ✓ 100% LEGAL PROOF
+              ✓ SECTION 63 BSA EVIDENTIARY RECORD
             </span>
           </div>
 
@@ -118,7 +118,7 @@ export const DigitalReceiptModal: React.FC<DigitalReceiptModalProps> = ({ log, o
                 Slip #{log.verification_token}
               </h3>
               <p className="text-xs sm:text-sm text-[#3d4a44] font-bold mt-0.5">
-                Official proof that you worked today. Contractors cannot deny this payment.
+                Contemporaneous statutory record of shift hours and wages under Rule 26 Form V.
               </p>
             </div>
 

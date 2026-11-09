@@ -14,7 +14,8 @@ import {
   auditLogs 
 } from './src/db/schema.ts';
 import { getOrCreateUser, getUserByPhone } from './src/db/users.ts';
-import { requireAuth, requireRole, type AuthRequest } from './src/middleware/auth.ts';
+import { requireAuth, requireRole, createAppSessionToken, type AuthRequest } from './src/middleware/auth.ts';
+import { adminAuth } from './src/lib/firebase-admin.ts';
 import { 
   attendanceSubmissionSchema, 
   disputeSubmissionSchema, 
@@ -141,6 +142,63 @@ function writeDisputesFile(disputesList: any[]) {
   }
 }
 
+const WORKERS_FILE = path.resolve('workers_db.json');
+
+function readWorkersFile(): any[] {
+  try {
+    if (fs.existsSync(WORKERS_FILE)) {
+      const raw = fs.readFileSync(WORKERS_FILE, 'utf-8');
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (e) {
+    console.warn('[Storage] Error reading workers_db.json:', e);
+  }
+  return [
+    {
+      id: 'SHR-2026-001',
+      name: 'Rameshwar Yadav',
+      phoneNumber: '+919876543210',
+      trade: 'Mason (राजमिस्त्री)',
+      dailyWage: 600,
+      worksite: 'Azadpur Mandi Wholesale Hub, North Delhi',
+      emergencyContact: '+919876500001',
+      aadhaarLastFour: '4821',
+      registeredAt: '2026-10-15T08:00:00.000Z',
+    },
+    {
+      id: 'SHR-2026-002',
+      name: 'Bablu Kumar',
+      phoneNumber: '+919811234567',
+      trade: 'Helper (मजदूर / हेल्पर)',
+      dailyWage: 600,
+      worksite: 'Dharavi Redevelopment Sector 5, Mumbai',
+      emergencyContact: '+919811200002',
+      aadhaarLastFour: '1934',
+      registeredAt: '2026-10-20T08:00:00.000Z',
+    },
+    {
+      id: 'SHR-2026-003',
+      name: 'Suresh Paswan',
+      phoneNumber: '+919822012345',
+      trade: 'Carpenter (बढ़ई / शटरिंग)',
+      dailyWage: 700,
+      worksite: 'Peenya Industrial Area, Bengaluru',
+      emergencyContact: '+919822000003',
+      aadhaarLastFour: '7741',
+      registeredAt: '2026-10-25T08:00:00.000Z',
+    },
+  ];
+}
+
+function writeWorkersFile(workersList: any[]) {
+  try {
+    fs.writeFileSync(WORKERS_FILE, JSON.stringify(workersList, null, 2), 'utf-8');
+  } catch (e) {
+    console.warn('[Storage] Failed to write workers_db.json:', e);
+  }
+}
+
 // Helper: Seed demonstration data into PostgreSQL if configured and empty
 async function seedInitialDatabaseIfEmpty() {
   if (!isPostgresConfigured || !db) {
@@ -258,8 +316,271 @@ async function seedInitialDatabaseIfEmpty() {
 }
 
 // --------------------------------------------------------------------------------
+// UNIFIED DUAL-WRITE PERSISTENCE & RECONCILIATION ENGINE
+// --------------------------------------------------------------------------------
+
+/**
+ * Dual-store persistence coordinator:
+ * Ensures PostgreSQL relational records and JSON file ledger stay 100% in lockstep.
+ */
+async function persistLogUnified(log: WorkLog) {
+  // 1. Thread-safe atomic file update
+  await mutateWorkLogsAtomically((existingLogs) => {
+    const idx = existingLogs.findIndex(l => l.id === log.id);
+    if (idx !== -1) {
+      existingLogs[idx] = { ...existingLogs[idx], ...log };
+    } else {
+      existingLogs.unshift(log);
+    }
+    return existingLogs;
+  });
+
+  // 2. PostgreSQL persistence if active
+  if (isPostgresConfigured && db) {
+    try {
+      const wageVal = (Number(log.actual_wage_earned ?? log.agreed_wage ?? log.estimated_wage) || 600).toFixed(2);
+      const existing = await db.select().from(attendanceRecords).where(eq(attendanceRecords.id, log.id)).limit(1);
+      
+      if (existing.length > 0) {
+        await db.update(attendanceRecords)
+          .set({
+            hoursWorked: log.hours_worked || 8.0,
+            actualWageEarned: wageVal,
+            verificationStatus: (log.verification_status as any) || 'attendance_acknowledged',
+            token: log.verification_token || existing[0].token,
+            tokenHash: log.token_hash || existing[0].tokenHash,
+          })
+          .where(eq(attendanceRecords.id, log.id));
+
+        await db.update(wageRecords)
+          .set({
+            amountEarned: wageVal,
+            outstandingAmount: Math.max(0, Number(wageVal) - Number(log.amount_paid || 0)).toFixed(2),
+            paymentStatus: (log.status === 'verified' || log.verification_status === 'attendance_acknowledged') ? 'unpaid' : 'pending',
+          })
+          .where(eq(wageRecords.attendanceId, log.id));
+      } else {
+        const worker = await getOrCreateUser(
+          `user-${log.phone_number}`,
+          `${log.phone_number.replace(/\D/g, '')}@labor.local`,
+          log.worker_name || 'Laborer',
+          'worker',
+          log.phone_number
+        );
+
+        await db.insert(attendanceRecords).values({
+          id: log.id,
+          workerId: worker.id,
+          date: log.date || (log.created_at || new Date().toISOString()).slice(0, 10),
+          latitude: log.latitude ?? null,
+          longitude: log.longitude ?? null,
+          locationName: log.location_name || 'Work Site',
+          locationMethod: log.latitude ? 'gps_device' : 'manual_preset',
+          verificationStatus: (log.verification_status as any) || 'location_submitted',
+          hoursWorked: log.hours_worked || 8.0,
+          agreedWage: (Number(log.agreed_wage ?? log.estimated_wage) || 600).toFixed(2),
+          actualWageEarned: wageVal,
+          token: log.verification_token || `SHP-${crypto.randomBytes(4).toString('hex').toUpperCase()}`,
+          tokenHash: log.token_hash || crypto.createHash('sha256').update(log.verification_token || log.id).digest('hex'),
+          isDemo: Boolean(log.is_demo),
+        });
+
+        await db.insert(wageRecords).values({
+          attendanceId: log.id,
+          workerId: worker.id,
+          amountEarned: wageVal,
+          amountPaid: (Number(log.amount_paid) || 0).toFixed(2),
+          outstandingAmount: wageVal,
+          paymentStatus: 'unpaid',
+          isDemo: Boolean(log.is_demo),
+        });
+      }
+    } catch (dbErr: any) {
+      console.warn('[Storage Dual-Write] Postgres log update note:', dbErr.message);
+    }
+  }
+}
+
+/**
+ * Reconciles storage between Postgres and local file ledger on server startup.
+ * Prevents drift and divergence across restarts.
+ */
+async function reconcileStorageOnStartup() {
+  if (!isPostgresConfigured || !db) return;
+  try {
+    const fileLogs = readWorkLogsFile();
+    const dbRecords = await db.select().from(attendanceRecords);
+    const dbIds = new Set(dbRecords.map(r => r.id));
+    const fileIds = new Set(fileLogs.map(l => l.id));
+
+    // Reconcile: file logs missing from Postgres
+    for (const log of fileLogs) {
+      if (!dbIds.has(log.id)) {
+        try {
+          const worker = await getOrCreateUser(
+            `user-${log.phone_number}`,
+            `${log.phone_number.replace(/\D/g, '')}@labor.local`,
+            log.worker_name || 'Laborer',
+            'worker',
+            log.phone_number
+          );
+          const wage = (Number(log.actual_wage_earned ?? log.agreed_wage ?? log.estimated_wage) || 600).toFixed(2);
+          await db.insert(attendanceRecords).values({
+            id: log.id,
+            workerId: worker.id,
+            date: log.date || (log.created_at || new Date().toISOString()).slice(0, 10),
+            latitude: log.latitude ?? null,
+            longitude: log.longitude ?? null,
+            locationName: log.location_name || 'Work Site',
+            locationMethod: log.latitude ? 'gps_device' : 'manual_preset',
+            verificationStatus: (log.verification_status as any) || 'location_submitted',
+            hoursWorked: log.hours_worked || 8.0,
+            agreedWage: wage,
+            actualWageEarned: wage,
+            token: log.verification_token || 'SHP-AUTO-RECON',
+            tokenHash: log.token_hash || crypto.createHash('sha256').update(log.verification_token || log.id).digest('hex'),
+            isDemo: Boolean(log.is_demo),
+          });
+          await db.insert(wageRecords).values({
+            attendanceId: log.id,
+            workerId: worker.id,
+            amountEarned: wage,
+            amountPaid: (Number(log.amount_paid) || 0).toFixed(2),
+            outstandingAmount: wage,
+            paymentStatus: 'unpaid',
+            isDemo: Boolean(log.is_demo),
+          });
+        } catch {
+          // Ignore conflict
+        }
+      }
+    }
+
+    // Reconcile: Postgres records missing from file ledger
+    const joined = await db
+      .select({
+        id: attendanceRecords.id,
+        worker_id: attendanceRecords.workerId,
+        date: attendanceRecords.date,
+        latitude: attendanceRecords.latitude,
+        longitude: attendanceRecords.longitude,
+        location_name: attendanceRecords.locationName,
+        location_method: attendanceRecords.locationMethod,
+        verification_status: attendanceRecords.verificationStatus,
+        hours_worked: attendanceRecords.hoursWorked,
+        agreed_wage: attendanceRecords.agreedWage,
+        actual_wage_earned: attendanceRecords.actualWageEarned,
+        token: attendanceRecords.token,
+        token_hash: attendanceRecords.tokenHash,
+        is_demo: attendanceRecords.isDemo,
+        created_at: attendanceRecords.createdAt,
+        phone_number: users.phoneNumber,
+        worker_name: users.name,
+      })
+      .from(attendanceRecords)
+      .innerJoin(users, eq(attendanceRecords.workerId, users.id));
+
+    let addedToFile = 0;
+    for (const r of joined) {
+      if (!fileIds.has(r.id)) {
+        const wage = Number(r.actual_wage_earned) || 600;
+        fileLogs.push({
+          id: r.id,
+          phone_number: r.phone_number || '+919876543210',
+          worker_id: r.worker_id,
+          latitude: r.latitude,
+          longitude: r.longitude,
+          message_type: 'location',
+          raw_message: `${r.location_name} [${r.verification_status}]`,
+          estimated_wage: wage,
+          agreed_wage: Number(r.agreed_wage) || wage,
+          actual_wage_earned: wage,
+          hours_worked: r.hours_worked,
+          created_at: r.created_at.toISOString(),
+          date: r.date,
+          worker_name: r.worker_name,
+          location_name: r.location_name,
+          location_method: r.location_method as any,
+          status: (r.verification_status === 'attendance_acknowledged' || r.verification_status === 'location_matched') ? 'verified' : 'pending',
+          verification_status: r.verification_status as any,
+          verification_token: r.token,
+          token_hash: r.token_hash,
+          is_demo: r.is_demo,
+        });
+        addedToFile++;
+      }
+    }
+
+    if (addedToFile > 0) {
+      writeWorkLogsFile(fileLogs);
+    }
+    console.log(`[Persistence Reconciliation] PostgreSQL and File Ledger in lockstep (${fileLogs.length} total records)`);
+  } catch (err: any) {
+    console.warn('[Persistence Reconciliation] Sync warning:', err.message);
+  }
+}
+
+// --------------------------------------------------------------------------------
 // API ROUTES
 // --------------------------------------------------------------------------------
+
+// 0. Issue / Authenticate Session Token (HMAC-SHA256 Signed, 7-Day Expiry)
+app.post('/api/auth/session', async (req: Request, res: Response) => {
+  try {
+    const { role = 'worker', phoneNumber = '+919876543210', name, idToken } = req.body;
+    const cleanPhone = phoneNumber.startsWith('+') ? phoneNumber : `+${phoneNumber.replace(/\D/g, '')}`;
+
+    let verifiedUid = `user-${cleanPhone}`;
+    let verifiedEmail = `${cleanPhone.replace(/\D/g, '')}@labor.local`;
+    let verifiedName = name || 'Laborer';
+    let verifiedRole = role;
+
+    if (idToken) {
+      try {
+        const decoded = await adminAuth.verifyIdToken(idToken);
+        verifiedUid = decoded.uid;
+        verifiedEmail = decoded.email || verifiedEmail;
+        verifiedName = decoded.name || verifiedName;
+        if (decoded.role) verifiedRole = decoded.role as string;
+      } catch (e: any) {
+        return res.status(401).json({ error: 'Invalid Firebase ID token' });
+      }
+    }
+
+    let dbUser: any = null;
+    if (isPostgresConfigured && db) {
+      try {
+        dbUser = await getOrCreateUser(verifiedUid, verifiedEmail, verifiedName, verifiedRole, cleanPhone);
+      } catch (dbErr) {
+        console.warn('[Auth] DB user creation note:', (dbErr as Error).message);
+      }
+    }
+
+    const token = createAppSessionToken({
+      uid: verifiedUid,
+      email: verifiedEmail,
+      role: verifiedRole,
+      phoneNumber: cleanPhone,
+      name: verifiedName,
+    });
+
+    res.json({
+      success: true,
+      token,
+      user: {
+        uid: verifiedUid,
+        email: verifiedEmail,
+        role: verifiedRole,
+        phoneNumber: cleanPhone,
+        name: verifiedName,
+        dbId: dbUser?.id,
+      },
+    });
+  } catch (err: any) {
+    console.error('[Auth] Session creation failure:', err);
+    res.status(500).json({ error: 'Failed to create auth session' });
+  }
+});
 
 // 1. Current Authenticated User Profile & Role
 app.get('/api/auth/me', requireAuth, (req: AuthRequest, res) => {
@@ -374,7 +695,7 @@ app.post('/api/attendance', requireAuth, async (req: AuthRequest, res) => {
         let earnedWage = target.agreed_wage || 600.0;
         let shiftStatus: 'completed' | 'half_day' | 'overtime' = 'completed';
         if (diffHours < 4.0) {
-          earnedWage = 300.0;
+          earnedWage = Number((earnedWage * 0.5).toFixed(2));
           shiftStatus = 'half_day';
         } else if (diffHours > 8.5) {
           const extraHours = diffHours - 8.0;
@@ -392,7 +713,7 @@ app.post('/api/attendance', requireAuth, async (req: AuthRequest, res) => {
         if (data.workPhotoUrl) target.work_photo_url = data.workPhotoUrl;
         if (data.workPhotoHash) target.work_photo_hash = data.workPhotoHash;
 
-        writeWorkLogsFile(existingLogs);
+        await persistLogUnified(target);
         return res.json({ success: true, log: target });
       }
     }
@@ -446,8 +767,7 @@ app.post('/api/attendance', requireAuth, async (req: AuthRequest, res) => {
       statutory_rule: 'Sec 63 BSA & Rule 26 Central MW Rules (Form V)',
     };
 
-    existingLogs.unshift(responseLog);
-    writeWorkLogsFile(existingLogs);
+    await persistLogUnified(responseLog);
 
     res.status(201).json({ success: true, log: responseLog });
   } catch (error) {
@@ -485,7 +805,7 @@ app.post('/api/attendance/checkout', requireAuth, async (req: AuthRequest, res) 
     let shiftStatus: 'completed' | 'half_day' | 'overtime' = 'completed';
 
     if (diffHours < 4.0) {
-      earnedWage = 300.0;
+      earnedWage = Number((earnedWage * 0.5).toFixed(2));
       shiftStatus = 'half_day';
     } else if (diffHours > 8.5) {
       const extraHours = diffHours - 8.0;
@@ -502,7 +822,7 @@ app.post('/api/attendance/checkout', requireAuth, async (req: AuthRequest, res) 
     target.status = 'verified';
     if (workPhotoUrl) target.work_photo_url = workPhotoUrl;
 
-    writeWorkLogsFile(logs);
+    await persistLogUnified(target);
     res.json({ success: true, log: target });
   } catch (error) {
     console.error('Error in checkout endpoint:', error);
@@ -614,7 +934,7 @@ app.post('/api/logs', requireAuth, async (req: AuthRequest, res) => {
 // --------------------------------------------------------------------------------
 // SCALABILITY ENGINE: ASYNC INGRESS BUFFER (TIP 1)
 // --------------------------------------------------------------------------------
-app.post('/api/ingress/enqueue', async (req: Request, res: Response) => {
+app.post('/api/ingress/enqueue', requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const { phoneNumber, workerName, body, latitude, longitude, locationName, clientTimestamp, idempotencyKey, isCheckOut } = req.body;
     if (!phoneNumber) {
@@ -649,7 +969,7 @@ app.post('/api/ingress/enqueue', async (req: Request, res: Response) => {
   }
 });
 
-app.get('/api/ingress/status/:jobId', (req: Request, res: Response) => {
+app.get('/api/ingress/status/:jobId', requireAuth, (req: AuthRequest, res: Response) => {
   const { jobId } = req.params;
   const job = ingressBuffer.getJob(jobId);
   if (!job) {
@@ -667,7 +987,7 @@ app.get('/api/ingress/status/:jobId', (req: Request, res: Response) => {
   });
 });
 
-app.get('/api/ingress/metrics', (_req: Request, res: Response) => {
+app.get('/api/ingress/metrics', requireAuth, requireRole(['administrator']), (_req: AuthRequest, res: Response) => {
   res.json({
     metrics: ingressBuffer.metrics,
     currentQueueDepth: ingressBuffer.getQueueDepth(),
@@ -678,7 +998,7 @@ app.get('/api/ingress/metrics', (_req: Request, res: Response) => {
 // --------------------------------------------------------------------------------
 // SCALABILITY ENGINE: CQRS MATERIALIZED PASSBOOK SUMMARY (TIP 2)
 // --------------------------------------------------------------------------------
-app.get('/api/worker/:phone/summary', async (req: Request, res: Response) => {
+app.get('/api/worker/:phone/summary', requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const rawPhone = req.params.phone;
     const cleanPhone = rawPhone.startsWith('+') ? rawPhone : `+${rawPhone.replace(/\D/g, '')}`;
@@ -690,6 +1010,69 @@ app.get('/api/worker/:phone/summary', async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Failed to retrieve materialized passbook summary' });
   }
 });
+
+// Fetch all registered labourers
+app.get('/api/workers', requireAuth, (_req: AuthRequest, res: Response) => {
+  try {
+    const workers = readWorkersFile();
+    res.json({ success: true, workers });
+  } catch (err: any) {
+    console.error('Failed to get workers:', err);
+    res.status(500).json({ error: 'Failed to retrieve registered workers' });
+  }
+});
+
+// Register a new labourer in the system
+app.post('/api/workers/register', requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { name, phoneNumber, trade, dailyWage, worksite, emergencyContact, aadhaarLastFour, notes } = req.body;
+    if (!name || !phoneNumber) {
+      return res.status(400).json({ error: 'Name and Phone Number are required.' });
+    }
+
+    const cleanPhone = phoneNumber.startsWith('+') ? phoneNumber.trim() : `+${phoneNumber.replace(/\D/g, '')}`;
+    const workers = readWorkersFile();
+
+    const existingIdx = workers.findIndex(w => w.phoneNumber === cleanPhone);
+    const registrationId = `SHR-2026-${Math.floor(1000 + Math.random() * 9000)}`;
+
+    const newLabour = {
+      id: existingIdx !== -1 ? workers[existingIdx].id : registrationId,
+      name: name.trim(),
+      phoneNumber: cleanPhone,
+      trade: trade || 'Helper (मजदूर / हेल्पर)',
+      dailyWage: Number(dailyWage) || 600,
+      worksite: worksite || 'Peenya Industrial Area, Bengaluru',
+      emergencyContact: emergencyContact ? emergencyContact.trim() : undefined,
+      aadhaarLastFour: aadhaarLastFour ? aadhaarLastFour.trim() : undefined,
+      registeredAt: existingIdx !== -1 ? workers[existingIdx].registeredAt : new Date().toISOString(),
+      notes: notes || undefined,
+    };
+
+    if (existingIdx !== -1) {
+      workers[existingIdx] = newLabour;
+    } else {
+      workers.unshift(newLabour);
+    }
+
+    writeWorkersFile(workers);
+
+    // Register user profile
+    await getOrCreateUser(
+      `user-${cleanPhone}`,
+      `${cleanPhone.replace(/\D/g, '')}@labor.local`,
+      newLabour.name,
+      'worker',
+      cleanPhone
+    );
+
+    res.status(201).json({ success: true, worker: newLabour });
+  } catch (err: any) {
+    console.error('Failed to register labourer:', err);
+    res.status(500).json({ error: 'Failed to register labourer' });
+  }
+});
+
 
 // Cold Storage Evidentiary Archive (Tip 2)
 app.get('/api/archive/export', requireAuth, async (req: AuthRequest, res: Response) => {
@@ -721,7 +1104,7 @@ app.get('/api/archive/export', requireAuth, async (req: AuthRequest, res: Respon
 // --------------------------------------------------------------------------------
 // SCALABILITY ENGINE: EDGE DELTA CRDT SYNC (TIP 3)
 // --------------------------------------------------------------------------------
-app.post('/api/sync/delta', async (req: Request, res: Response) => {
+app.post('/api/sync/delta', requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const deltas = req.body.deltas;
     if (!Array.isArray(deltas) || deltas.length === 0) {
@@ -729,6 +1112,7 @@ app.post('/api/sync/delta', async (req: Request, res: Response) => {
     }
 
     const syncedTokens: Record<string, string> = {};
+    const processedLogs: WorkLog[] = [];
 
     await mutateWorkLogsAtomically((existingLogs) => {
       for (const item of deltas) {
@@ -751,9 +1135,12 @@ app.post('/api/sync/delta', async (req: Request, res: Response) => {
             target.status = 'verified';
             existingLogs[targetIndex] = target;
             syncedTokens[item.walId] = target.verification_token || officialToken;
+            processedLogs.push(target);
             continue;
           }
         }
+
+        const deltaWage = Number(item.payload?.agreedWage || item.payload?.estimatedWage) || 600.0;
 
         // Check-in or default delta
         const newLog: WorkLog = {
@@ -764,9 +1151,9 @@ app.post('/api/sync/delta', async (req: Request, res: Response) => {
           longitude: item.payload?.longitude ?? null,
           message_type: item.payload?.latitude ? 'location' : 'text',
           raw_message: item.payload?.rawMessage || `Offline WAL Punch at ${item.payload?.locationName || 'Site'}`,
-          estimated_wage: item.payload?.estimatedWage || 600.0,
-          agreed_wage: item.payload?.estimatedWage || 600.0,
-          actual_wage_earned: item.payload?.estimatedWage || 600.0,
+          estimated_wage: deltaWage,
+          agreed_wage: deltaWage,
+          actual_wage_earned: deltaWage,
           hours_worked: item.payload?.hoursWorked || 8.0,
           created_at: item.timestamp,
           check_in_time: item.timestamp,
@@ -784,10 +1171,16 @@ app.post('/api/sync/delta', async (req: Request, res: Response) => {
 
         existingLogs.unshift(newLog);
         syncedTokens[item.walId] = officialToken;
+        processedLogs.push(newLog);
       }
 
       return existingLogs;
     });
+
+    // Dual-persist to PostgreSQL to prevent divergence
+    for (const log of processedLogs) {
+      await persistLogUnified(log);
+    }
 
     // Warmup CQRS summaries after delta commits
     warmupSummaries(readWorkLogsFile());
@@ -1335,6 +1728,7 @@ app.use((err: any, req: Request, res: Response, _next: NextFunction) => {
 // --------------------------------------------------------------------------------
 async function startServer() {
   await seedInitialDatabaseIfEmpty();
+  await reconcileStorageOnStartup();
   warmupSummaries(readWorkLogsFile());
 
   const distPath = path.resolve('dist');

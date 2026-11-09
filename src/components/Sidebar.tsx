@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Users, Radio, MapPin, RotateCcw, Search, CheckCircle, BookOpen, HardHat, ClipboardCheck, Volume2, VolumeX, Smartphone } from 'lucide-react';
+import { Users, UserPlus, MapPin, RotateCcw, Search, CheckCircle, BookOpen, HardHat, ClipboardCheck, Volume2, VolumeX, Smartphone } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 import { speakText, stopSpeaking } from '../utils/speech';
 
@@ -7,7 +7,7 @@ interface SidebarProps {
   workers: string[];
   selectedWorker: string;
   onSelectWorker: (worker: string) => void;
-  onOpenSimulator: () => void;
+  onOpenRegisterLabour?: () => void;
   onQuickCheckIn: () => void;
   onResetData: () => void;
   onOpenTutorial: (role?: 'worker' | 'admin') => void;
@@ -19,13 +19,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
   workers,
   selectedWorker,
   onSelectWorker,
-  onOpenSimulator,
+  onOpenRegisterLabour,
   onQuickCheckIn,
   onResetData,
   onOpenTutorial,
   onOpenInstallModal,
   isAppInstalled = false,
 }) => {
+
   const { language, t } = useLanguage();
   const [directPhone, setDirectPhone] = useState('');
 
@@ -103,13 +104,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <span>📌 {t.dispatchGpsPinBtn}</span>
         </button>
 
-        <button
-          onClick={onOpenSimulator}
-          className="civic-btn-secondary w-full inline-flex items-center justify-center gap-2 px-3.5 py-2.5 text-xs sm:text-sm cursor-pointer active:scale-95 font-black"
-        >
-          <Radio className="w-4 h-4 text-[#1b4332] shrink-0" />
-          <span>💬 Open Phone / WhatsApp Simulator</span>
-        </button>
+        {onOpenRegisterLabour && (
+          <button
+            onClick={onOpenRegisterLabour}
+            className="civic-btn-secondary w-full inline-flex items-center justify-center gap-2 px-3.5 py-2.5 text-xs sm:text-sm cursor-pointer active:scale-95 font-black"
+          >
+            <UserPlus className="w-4 h-4 text-[#1b4332] shrink-0" />
+            <span>👷 Register Labour (नया मजदूर जोड़ें)</span>
+          </button>
+        )}
+
 
         {onOpenInstallModal && (
           <button

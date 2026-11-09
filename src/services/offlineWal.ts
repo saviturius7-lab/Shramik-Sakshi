@@ -4,6 +4,7 @@
  * to punch attendance with client-side cryptographic signatures, committing to IndexedDB WAL
  * and flushing delta streams when network reconnects.
  */
+import { fetchWithAuth } from './auth';
 
 export interface WalRecord {
   walId: string;
@@ -187,7 +188,7 @@ export async function syncWalDeltaBatch(): Promise<{ synced: number; failed: num
   if (pending.length === 0) return { synced: 0, failed: 0 };
 
   try {
-    const res = await fetch('/api/sync/delta', {
+    const res = await fetchWithAuth('/api/sync/delta', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

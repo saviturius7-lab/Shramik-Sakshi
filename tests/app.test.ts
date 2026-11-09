@@ -358,6 +358,90 @@ async function runSuite() {
     await markWalRecordSynced(record.walId, 'SHP-TEST-SYNCED');
   });
 
+  // Test 13: Strict Authentication & Zero Guest Bypass
+  await runTest('13. Strict authentication enforces signed session tokens and rejects guest/demo bypass', async () => {
+    const { createAppSessionToken, verifyAppSessionToken, requireAuth } = await import('../src/middleware/auth.js');
+    
+    // Valid signed token
+    const token = createAppSessionToken({
+      uid: 'user-worker-99',
+      email: 'worker99@labor.local',
+      role: 'worker',
+      phoneNumber: '+919876543299',
+      name: 'Authenticated Mason',
+    });
+    assert(token.startsWith('shk_'), 'Token must have official app prefix');
+
+    const verified = verifyAppSessionToken(token);
+    assert(verified !== null, 'Token must be verified successfully');
+    assert(verified!.phoneNumber === '+919876543299', 'Token payload must be preserved');
+
+    // Tampered token must fail
+    const tampered = token.slice(0, -5) + 'XXXXX';
+    assert(verifyAppSessionToken(tampered) === null, 'Tampered token signature must be rejected');
+
+    // Middleware check: missing Authorization header must yield 401
+    let statusCode = 200;
+    let jsonBody: any = null;
+    const mockRes: any = {
+      status: (code: number) => {
+        statusCode = code;
+        return {
+          json: (b: any) => { jsonBody = b; },
+        };
+      },
+    };
+    const mockReq: any = { headers: {} };
+    let nextCalled = false;
+    await requireAuth(mockReq, mockRes, () => { nextCalled = true; });
+
+    assert(!nextCalled, 'requireAuth must not call next when header is missing');
+    assert(statusCode === 401, `Expected HTTP 401 Unauthorized, got ${statusCode}`);
+    assert(jsonBody?.error?.includes('Unauthorized'), 'Error message must specify Unauthorized');
+  });
+
+  // Test 14: Dynamic Wage Calculations for Non-₹600 Schedules
+  await runTest('14. Dynamic wage calculation supports custom trade wages (₹850, ₹1000) for half-day and overtime without 600 default', async () => {
+    const { recordCheckOutForLog, saveStoredLogs } = await import('../src/services/storage.js');
+    
+    // Worker with agreed wage of ₹850/day
+    const customWageLog: any = {
+      id: 'test_wage_850',
+      phone_number: '+919876543850',
+      date: '2026-11-09',
+      created_at: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(), // 3 hours ago (half day)
+      check_in_time: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
+      agreed_wage: 850.0,
+      actual_wage_earned: 850.0,
+      hours_worked: 3.0,
+    };
+    saveStoredLogs([customWageLog]);
+
+    const halfDayResult = recordCheckOutForLog('test_wage_850', new Date().toISOString());
+    assert(halfDayResult.updatedLog !== null, 'Log must be updated on checkout');
+    assert(halfDayResult.updatedLog!.shift_status === 'half_day', 'Duration < 4h must be half_day');
+    // Half day of ₹850 is ₹425 (not hardcoded ₹300)
+    assert(halfDayResult.updatedLog!.actual_wage_earned === 425.0, `Expected half-day wage 425.0, got ${halfDayResult.updatedLog!.actual_wage_earned}`);
+
+    // Worker with agreed wage of ₹1000/day working 10 hours (2 hours OT)
+    const otWageLog: any = {
+      id: 'test_wage_1000_ot',
+      phone_number: '+919876543100',
+      date: '2026-11-09',
+      created_at: new Date(Date.now() - 10 * 60 * 60 * 1000).toISOString(),
+      check_in_time: new Date(Date.now() - 10 * 60 * 60 * 1000).toISOString(),
+      agreed_wage: 1000.0,
+      actual_wage_earned: 1000.0,
+      hours_worked: 10.0,
+    };
+    saveStoredLogs([otWageLog]);
+
+    const otResult = recordCheckOutForLog('test_wage_1000_ot', new Date().toISOString());
+    assert(otResult.updatedLog!.shift_status === 'overtime', 'Duration > 8.5h must be overtime');
+    // Hourly base = 1000/8 = 125. Extra 2 hours @ 2x OT rate = 2 * 250 = 500. Total = 1500.
+    assert(otResult.updatedLog!.actual_wage_earned === 1500.0, `Expected overtime wage 1500.0, got ${otResult.updatedLog!.actual_wage_earned}`);
+  });
+
   console.log('\n------------------------------------------------------');
   const allPassed = results.every((r) => r.passed);
   console.log(`TOTAL TESTS: ${results.length} | PASSED: ${results.filter((r) => r.passed).length} | FAILED: ${results.filter((r) => !r.passed).length}`);

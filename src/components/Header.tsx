@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
-import { RefreshCw, Radio, Globe, ShieldCheck, Printer, Volume2, VolumeX, CheckCircle2, Smartphone, DownloadCloud } from 'lucide-react';
+import { RefreshCw, Globe, ShieldCheck, Printer, Volume2, VolumeX, CheckCircle2, Smartphone, DownloadCloud, UserPlus, Clock } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 import { SupportedLanguage, UserRole } from '../types';
 import { speakText, stopSpeaking } from '../utils/speech';
 
 interface HeaderProps {
-  onOpenSimulator: () => void;
+  onOpenRegisterLabour?: () => void;
   onRefresh: () => void;
   onOpenTutorial: (role?: 'worker' | 'admin') => void;
   onPrintPassbook?: () => void;
@@ -15,7 +15,9 @@ interface HeaderProps {
   onToggleZenMode?: () => void;
   onOpenInstallModal?: () => void;
   isAppInstalled?: boolean;
+  activeShiftWorker?: string | null;
 }
+
 
 const LANGUAGES: Array<{ code: SupportedLanguage; label: string; native: string }> = [
   { code: 'en', label: 'English', native: 'English' },
@@ -27,7 +29,7 @@ const LANGUAGES: Array<{ code: SupportedLanguage; label: string; native: string 
 ];
 
 export const Header: React.FC<HeaderProps> = ({ 
-  onOpenSimulator, 
+  onOpenRegisterLabour, 
   onRefresh, 
   onOpenTutorial,
   onPrintPassbook,
@@ -37,7 +39,9 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleZenMode,
   onOpenInstallModal,
   isAppInstalled = false,
+  activeShiftWorker,
 }) => {
+
   const { language, setLanguage, t } = useLanguage();
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
 
@@ -95,7 +99,7 @@ export const Header: React.FC<HeaderProps> = ({
           </span>
           <span className="text-xs text-[#2e7d32] font-black tracking-tight flex items-center gap-1">
             <CheckCircle2 className="w-3.5 h-3.5 text-[#2e7d32]" />
-            <span>100% LEGAL PROOF FOR YOUR DAILY ₹600 WAGE</span>
+            <span>CERTIFIED CONTEMPORANEOUS WORK &amp; WAGE RECORD UNDER SECTION 63 BSA</span>
           </span>
         </div>
 
@@ -211,31 +215,39 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           )}
 
-          {/* WhatsApp / Phone Simulator Launch */}
-          <button
-            onClick={onOpenSimulator}
-            className="civic-btn-primary px-3.5 py-2 text-xs font-black flex items-center gap-1.5 cursor-pointer"
-          >
-            <Radio className="w-4 h-4 text-[#c29437]" />
-            <span>WhatsApp &amp; Phone Sim</span>
-          </button>
+          {/* Register Labour Button */}
+          {onOpenRegisterLabour && (
+            <button
+              onClick={onOpenRegisterLabour}
+              className="civic-btn-primary px-3.5 py-2 text-xs font-black flex items-center gap-1.5 cursor-pointer shadow-[2px_2px_0px_#1c2421] active:scale-95"
+              title="Register new worker in this app"
+            >
+              <UserPlus className="w-4 h-4 text-[#c29437]" />
+              <span>👷 Register Labour (मजदूर पंजीकरण)</span>
+            </button>
+          )}
         </div>
       </div>
 
       {/* Reassuring Plain Status Indicator */}
       <div className="mt-3 pt-2.5 border-t border-dashed border-[#1c2421]/20 flex flex-wrap items-center justify-between gap-2 text-xs text-[#3d4a44]">
         <div className="flex items-center gap-2">
-          <span className="w-2.5 h-2.5 rounded-full bg-[#1b4332] inline-block animate-pulse" />
-          <span className="font-black text-[#19231f]">SYSTEM READY: YOUR WORK IS RECORDED &amp; SAFE</span>
+          <span className={`w-2.5 h-2.5 rounded-full inline-block ${activeShiftWorker ? 'bg-[#059669] animate-ping' : 'bg-[#1b4332] animate-pulse'}`} />
+          <span className="font-black text-[#19231f]">
+            {activeShiftWorker
+              ? `🟢 ACTIVE SHIFT: ${activeShiftWorker} IS CURRENTLY ON DUTY`
+              : 'ALL-IN-ONE SHRAMIK LEDGER: REGISTRATION, ATTENDANCE, SLIPS & HISAAB'}
+          </span>
         </div>
         <div className="flex items-center gap-3 font-bold text-xs text-[#2e7d32]">
           <span>✓ GPS Location Verified</span>
           <span className="text-[#1c2421]/30">·</span>
-          <span>✓ Daily Wage Fixed at ₹600</span>
+          <span>✓ Agreed Daily Wage Rate Protected</span>
           <span className="text-[#1c2421]/30">·</span>
-          <span>✓ Court Admissible Paper Slips</span>
+          <span>✓ Section 63 BSA Evidentiary Slips</span>
         </div>
       </div>
+
     </header>
   );
 };

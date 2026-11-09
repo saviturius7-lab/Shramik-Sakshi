@@ -111,7 +111,7 @@ export const WorkerProfile: React.FC<WorkerProfileProps> = ({
               ✓ VERIFIED WORKER PASSBOOK
             </span>
             <span className="bg-[#ede8d8] text-[#1b4332] text-xs font-black px-2 py-0.5 rounded-lg border border-[#1b4332]/30 inline-flex items-center gap-1">
-              ✓ 100% LEGAL RECORD
+              ✓ STATUTORY MUSTER ROLL RECORD
             </span>
           </div>
 
@@ -214,19 +214,23 @@ export const WorkerProfile: React.FC<WorkerProfileProps> = ({
           <div className="h-24 flex items-end gap-2 pt-2 px-1 pb-1 border-b border-[#1c2421]/20 min-w-[280px]">
             {sortedLogs.map((log, idx) => {
               const heightPercent = Math.min(100, Math.round(((idx + 1) / Math.max(sortedLogs.length, 1)) * 100));
+              const cumulativeWage = sortedLogs.slice(0, idx + 1).reduce(
+                (sum, l) => sum + (Number(l.actual_wage_earned ?? l.agreed_wage ?? l.estimated_wage) || 600),
+                0
+              );
               return (
                 <div
                   key={log.id}
                   className="flex-1 min-w-[38px] max-w-[56px] flex flex-col items-center cursor-pointer group"
                   onClick={() => onOpenReceipt(log)}
-                  title={`Day ${idx + 1}: ₹${(idx + 1) * 600} - View Sec 65B slip`}
+                  title={`Day ${idx + 1}: ₹${cumulativeWage} - View Sec 63 BSA slip`}
                 >
                   <div
                     style={{ height: `${heightPercent}%` }}
                     className="w-full bg-[#1b4332] group-hover:bg-[#2d6a4f] transition-colors rounded-t flex items-center justify-center border border-[#1c2421]"
                   >
                     <span className="text-[9px] font-mono font-bold text-white select-none">
-                      ₹{(idx + 1) * 600}
+                      ₹{cumulativeWage}
                     </span>
                   </div>
                   <span className="text-[10px] font-bold text-[#3d4a44] mt-1 whitespace-nowrap group-hover:text-[#1b4332]">
@@ -325,7 +329,9 @@ export const WorkerProfile: React.FC<WorkerProfileProps> = ({
                 </div>
                 <div className="flex">
                   <span className="w-32 font-bold text-[#3d4a44]">Statutory Rate:</span>
-                  <span className="font-bold">₹600.00 / 8-Hour Shift (Circular 2026/MW-IV)</span>
+                  <span className="font-bold">
+                    ₹{sortedLogs[0]?.agreed_wage || sortedLogs[0]?.actual_wage_earned || 600}.00 / 8-Hour Shift (Circular 2026/MW-IV)
+                  </span>
                 </div>
                 <div className="flex">
                   <span className="w-32 font-bold text-[#3d4a44]">Issuing Authority:</span>

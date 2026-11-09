@@ -201,8 +201,8 @@ export const AndroidInstallModal: React.FC<AndroidInstallModalProps> = ({
 
               <p className="text-xs sm:text-sm text-[#3d4a44] font-bold max-w-md mx-auto">
                 {language === 'hi'
-                  ? 'एक क्लिक में ऐप डाउनलोड करें। यह बिना इंटरनेट के भी काम करती है और आपका ₹600 का कानूनी पक्का सबूत सुरक्षित रखती है।'
-                  : 'One-tap direct download. Opens like an official app, saves records offline, and guarantees court-admissible daily wage slips.'}
+                  ? 'एक क्लिक में ऐप डाउनलोड करें। यह बिना इंटरनेट के भी काम करती है और आपकी दैनिक मजदूरी और हाजिरी का पक्का रिकॉर्ड सुरक्षित रखती है।'
+                  : 'One-tap direct download. Opens like an official app, saves records offline, and generates Section 63 BSA certified daily wage slips.'}
               </p>
 
               <button

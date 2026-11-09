@@ -3,6 +3,8 @@ import { Wifi, WifiOff, RefreshCw, CheckCircle2, AlertTriangle, ShieldCheck, Zap
 import { subscribeToSyncState, drainOfflineSyncQueue, SyncState } from '../services/storage';
 import { syncWalDeltaBatch, getPendingWalRecords, WalRecord } from '../services/offlineWal';
 
+import { fetchWithAuth } from '../services/auth';
+
 interface NetworkSyncRibbonProps {
   userRole?: string;
   onSyncCompleted?: () => void;
@@ -31,7 +33,7 @@ export const NetworkSyncRibbon: React.FC<NetworkSyncRibbonProps> = ({
 
   const fetchIngressMetrics = async () => {
     try {
-      const res = await fetch('/api/ingress/metrics');
+      const res = await fetchWithAuth('/api/ingress/metrics');
       if (res.ok) {
         const data = await res.json();
         setQueueMetrics({

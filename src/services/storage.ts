@@ -1,10 +1,13 @@
-import { WorkLog, WorkerSummary } from '../types';
+import { WorkLog, WorkerSummary, RegisteredLabour } from '../types';
 import { INITIAL_WORK_LOGS } from '../data/initialLogs';
 import { runPreAiBot } from './preAiBot';
+import { fetchWithAuth } from './auth';
 
 const STORAGE_KEY = 'shramik_sakshi_work_logs_v1';
+const LABOURERS_STORAGE_KEY = 'shramik_sakshi_registered_labourers_v1';
 const DB_NAME = 'ShramikSakshiOfflineDB';
 const STORE_NAME = 'pending_sync_queue';
+const PENDING_BACKUP_KEY = 'shramik_offline_pending_backup';
 
 export type NetworkSyncStatus = 'online' | 'offline' | 'syncing' | 'synced';
 
@@ -35,33 +38,76 @@ function openIndexedDB(): Promise<IDBDatabase> {
   });
 }
 
+function getLocalBackupQueue(): WorkLog[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(PENDING_BACKUP_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveLocalBackupQueue(items: WorkLog[]): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(PENDING_BACKUP_KEY, JSON.stringify(items));
+  } catch {}
+}
+
 export async function saveOfflinePendingSubmission(log: WorkLog): Promise<void> {
+  const item = { ...log, pendingSync: true, savedOfflineAt: new Date().toISOString() };
+  
+  // 1. Save to localStorage backup immediately
+  const backup = getLocalBackupQueue();
+  const idx = backup.findIndex(b => b.id === log.id);
+  if (idx !== -1) {
+    backup[idx] = item;
+  } else {
+    backup.push(item);
+  }
+  saveLocalBackupQueue(backup);
+
+  // 2. Persist to IndexedDB
   try {
     const db = await openIndexedDB();
     const tx = db.transaction(STORE_NAME, 'readwrite');
     const store = tx.objectStore(STORE_NAME);
-    store.put({ ...log, pendingSync: true, savedOfflineAt: new Date().toISOString() });
+    store.put(item);
   } catch (err) {
     console.warn('Failed to save to IndexedDB offline queue:', err);
   }
 }
 
 export async function getPendingOfflineSubmissions(): Promise<WorkLog[]> {
+  const backup = getLocalBackupQueue();
   try {
     const db = await openIndexedDB();
-    return new Promise((resolve) => {
+    const idbItems: WorkLog[] = await new Promise((resolve) => {
       const tx = db.transaction(STORE_NAME, 'readonly');
       const store = tx.objectStore(STORE_NAME);
       const req = store.getAll();
       req.onsuccess = () => resolve(req.result || []);
       req.onerror = () => resolve([]);
     });
+
+    // Merge without duplicates (IndexedDB + localStorage backup)
+    const mergedMap = new Map<string, WorkLog>();
+    backup.forEach(b => mergedMap.set(b.id, b));
+    idbItems.forEach(i => mergedMap.set(i.id, i));
+    return Array.from(mergedMap.values());
   } catch {
-    return [];
+    return backup;
   }
 }
 
 export async function clearSyncedOfflineSubmission(id: string): Promise<void> {
+  // 1. Remove from localStorage backup
+  const backup = getLocalBackupQueue();
+  const filtered = backup.filter(b => b.id !== id);
+  saveLocalBackupQueue(filtered);
+
+  // 2. Remove from IndexedDB
   try {
     const db = await openIndexedDB();
     const tx = db.transaction(STORE_NAME, 'readwrite');
@@ -118,7 +164,7 @@ export async function drainOfflineSyncQueue(userRole: string = 'worker'): Promis
   let syncedCount = 0;
   for (const item of pending) {
     try {
-      const res = await fetch('/api/dispatch', {
+      const res = await fetchWithAuth('/api/dispatch', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -201,8 +247,13 @@ export function initOfflineSyncEngine(userRole: string = 'worker'): () => void {
   };
 }
 
+let inMemoryLogs: WorkLog[] = [...INITIAL_WORK_LOGS];
+
 export function getStoredLogs(): WorkLog[] {
   try {
+    if (typeof localStorage === 'undefined') {
+      return inMemoryLogs;
+    }
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(INITIAL_WORK_LOGS));
@@ -213,24 +264,187 @@ export function getStoredLogs(): WorkLog[] {
       return parsed;
     }
     return INITIAL_WORK_LOGS;
-  } catch (err) {
-    console.error('Error reading work logs from storage', err);
-    return INITIAL_WORK_LOGS;
+  } catch {
+    return inMemoryLogs;
   }
 }
 
 export function saveStoredLogs(logs: WorkLog[]): void {
+  inMemoryLogs = logs;
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(logs));
-  } catch (err) {
-    console.error('Error saving work logs', err);
-  }
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(logs));
+    }
+  } catch {}
 }
 
 export function resetStoredLogs(): WorkLog[] {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(INITIAL_WORK_LOGS));
+  inMemoryLogs = [...INITIAL_WORK_LOGS];
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(INITIAL_WORK_LOGS));
+    }
+  } catch {}
   return INITIAL_WORK_LOGS;
 }
+
+export const INITIAL_REGISTERED_LABOURERS: RegisteredLabour[] = [
+  {
+    id: 'SHR-2026-001',
+    name: 'Rameshwar Yadav',
+    phoneNumber: '+919876543210',
+    trade: 'Mason (राजमिस्त्री)',
+    dailyWage: 600,
+    worksite: 'Azadpur Mandi Wholesale Hub, North Delhi',
+    emergencyContact: '+919876500001',
+    aadhaarLastFour: '4821',
+    registeredAt: '2026-10-15T08:00:00.000Z',
+  },
+  {
+    id: 'SHR-2026-002',
+    name: 'Bablu Kumar',
+    phoneNumber: '+919811234567',
+    trade: 'Helper (मजदूर / हेल्पर)',
+    dailyWage: 600,
+    worksite: 'Dharavi Redevelopment Sector 5, Mumbai',
+    emergencyContact: '+919811200002',
+    aadhaarLastFour: '1934',
+    registeredAt: '2026-10-20T08:00:00.000Z',
+  },
+  {
+    id: 'SHR-2026-003',
+    name: 'Suresh Paswan',
+    phoneNumber: '+919822012345',
+    trade: 'Carpenter (बढ़ई / शटरिंग)',
+    dailyWage: 700,
+    worksite: 'Peenya Industrial Area, Bengaluru',
+    emergencyContact: '+919822000003',
+    aadhaarLastFour: '7741',
+    registeredAt: '2026-10-25T08:00:00.000Z',
+  },
+];
+
+let inMemoryLabourers: RegisteredLabour[] = [...INITIAL_REGISTERED_LABOURERS];
+
+export function getStoredLabourers(): RegisteredLabour[] {
+  try {
+    if (typeof localStorage === 'undefined') {
+      return inMemoryLabourers;
+    }
+    const raw = localStorage.getItem(LABOURERS_STORAGE_KEY);
+    if (!raw) {
+      localStorage.setItem(LABOURERS_STORAGE_KEY, JSON.stringify(INITIAL_REGISTERED_LABOURERS));
+      return INITIAL_REGISTERED_LABOURERS;
+    }
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      return parsed;
+    }
+    return INITIAL_REGISTERED_LABOURERS;
+  } catch {
+    return inMemoryLabourers;
+  }
+}
+
+export function saveStoredLabourer(labour: RegisteredLabour): RegisteredLabour[] {
+  const current = getStoredLabourers();
+  const idx = current.findIndex((w) => w.phoneNumber === labour.phoneNumber);
+  let updated: RegisteredLabour[];
+  if (idx !== -1) {
+    current[idx] = labour;
+    updated = [...current];
+  } else {
+    updated = [labour, ...current];
+  }
+  inMemoryLabourers = updated;
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(LABOURERS_STORAGE_KEY, JSON.stringify(updated));
+    }
+  } catch {}
+  return updated;
+}
+
+export async function fetchAllLabourers(): Promise<RegisteredLabour[]> {
+  try {
+    const res = await fetchWithAuth('/api/workers');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.workers && Array.isArray(data.workers)) {
+        localStorage.setItem(LABOURERS_STORAGE_KEY, JSON.stringify(data.workers));
+        return data.workers;
+      }
+    }
+  } catch {
+    // Fallback to local storage
+  }
+  return getStoredLabourers();
+}
+
+export async function registerLabourerInApp(labourData: {
+  name: string;
+  phoneNumber: string;
+  trade: string;
+  dailyWage?: number;
+  worksite?: string;
+  emergencyContact?: string;
+  aadhaarLastFour?: string;
+  notes?: string;
+}): Promise<RegisteredLabour> {
+  const cleanPhone = labourData.phoneNumber.startsWith('+')
+    ? labourData.phoneNumber.trim()
+    : `+${labourData.phoneNumber.replace(/\D/g, '')}`;
+
+  const registrationId = `SHR-2026-${Math.floor(1000 + Math.random() * 9000)}`;
+  const newRecord: RegisteredLabour = {
+    id: registrationId,
+    name: labourData.name.trim(),
+    phoneNumber: cleanPhone,
+    trade: labourData.trade || 'Helper (मजदूर / हेल्पर)',
+    dailyWage: Number(labourData.dailyWage) || 600,
+    worksite: labourData.worksite || 'Peenya Industrial Area, Bengaluru',
+    emergencyContact: labourData.emergencyContact,
+    aadhaarLastFour: labourData.aadhaarLastFour,
+    registeredAt: new Date().toISOString(),
+    notes: labourData.notes,
+  };
+
+  try {
+    const res = await fetchWithAuth('/api/workers/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newRecord),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.worker) {
+        saveStoredLabourer(data.worker);
+        return data.worker;
+      }
+    }
+  } catch {
+    // Offline mode: save locally
+  }
+
+  saveStoredLabourer(newRecord);
+  return newRecord;
+}
+
+export function getActiveShiftForWorker(phoneNumber: string, logs: WorkLog[]): WorkLog | null {
+  const today = new Date().toISOString().slice(0, 10);
+  // Find an active shift logged today or in recent 24h that has no check_out_time
+  return (
+    logs.find(
+      (l) =>
+        l.phone_number === phoneNumber &&
+        !l.check_out_time &&
+        (l.shift_status === 'active_in_progress' || !l.shift_status) &&
+        ((l.date && l.date === today) ||
+          (l.created_at && (l.created_at.slice(0, 10) === today || Date.now() - new Date(l.created_at).getTime() < 24 * 60 * 60 * 1000)))
+    ) || null
+  );
+}
+
 
 export function isEstoppelActive(log: WorkLog): boolean {
   if (log.verification_status === 'attendance_disputed') return false;
@@ -268,11 +482,11 @@ export function recordCheckOutForLog(logId: string, checkOutTimeIso?: string): {
   
   const diffHours = Math.max(0.5, Number(((new Date(checkOutTime).getTime() - new Date(checkInTime).getTime()) / (1000 * 60 * 60)).toFixed(1)));
   
-  let earnedWage = target.agreed_wage || 600.0;
+  let earnedWage = Number(target.agreed_wage || target.actual_wage_earned || target.estimated_wage) || 600.0;
   let shiftStatus: 'completed' | 'half_day' | 'overtime' = 'completed';
 
   if (diffHours < 4.0) {
-    earnedWage = 300.0;
+    earnedWage = Number((earnedWage * 0.5).toFixed(2));
     shiftStatus = 'half_day';
   } else if (diffHours > 8.5) {
     const extraHours = diffHours - 8.0;

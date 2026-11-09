@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { WorkLog, UserRole } from './types';
-import { getStoredLogs, resetStoredLogs, saveStoredLogs, initOfflineSyncEngine } from './services/storage';
+import { 
+  getStoredLogs, resetStoredLogs, saveStoredLogs, initOfflineSyncEngine, 
+  getActiveShiftForWorker, getStoredLabourers 
+} from './services/storage';
 import { Header } from './components/Header';
 import { NetworkSyncRibbon } from './components/NetworkSyncRibbon';
 import { Sidebar } from './components/Sidebar';
@@ -10,12 +13,13 @@ import { WorkerProfile } from './components/WorkerProfile';
 import { LiveMap } from './components/LiveMap';
 import { LedgerTable } from './components/LedgerTable';
 import { DigitalReceiptModal } from './components/DigitalReceiptModal';
-import { WhatsAppSimulatorModal } from './components/WhatsAppSimulatorModal';
+import { LabourRegistrationModal } from './components/LabourRegistrationModal';
 import { TutorialModal } from './components/TutorialModal';
 import { AndroidInstallModal } from './components/AndroidInstallModal';
 import { usePWAInstall } from './hooks/usePWAInstall';
 import { LanguageProvider, useLanguage } from './context/LanguageContext';
-import { CheckSquare, ListFilter, UserCheck, Map, LayoutGrid, BookOpen, HardHat, ClipboardCheck, Smartphone } from 'lucide-react';
+import { fetchWithAuth, obtainAuthSession } from './services/auth';
+import { CheckSquare, ListFilter, UserCheck, Map, LayoutGrid, BookOpen, HardHat, ClipboardCheck, Smartphone, UserPlus } from 'lucide-react';
 
 import { BoidsCanvas } from './components/BoidsCanvas';
 
@@ -27,7 +31,8 @@ const AppContent: React.FC = () => {
   const [userRole, setUserRole] = useState<UserRole>('worker');
   const [selectedWorker, setSelectedWorker] = useState<string>('All Workers');
   const [selectedReceiptLog, setSelectedReceiptLog] = useState<WorkLog | null>(null);
-  const [isSimulatorOpen, setIsSimulatorOpen] = useState<boolean>(false);
+  const [isRegisterModalOpen, setIsRegisterModalOpen] = useState<boolean>(false);
+
   const [isTutorialOpen, setIsTutorialOpen] = useState<boolean>(false);
   const [tutorialRole, setTutorialRole] = useState<'worker' | 'admin'>('worker');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -45,7 +50,7 @@ const AppContent: React.FC = () => {
   // Sync logs from backend and localStorage
   const fetchLogs = async () => {
     try {
-      const res = await fetch('/api/logs', {
+      const res = await fetchWithAuth('/api/logs', {
         headers: {
           'x-user-role': userRole,
         },
@@ -66,6 +71,8 @@ const AppContent: React.FC = () => {
   };
 
   useEffect(() => {
+    // Keep auth session aligned with active user role
+    obtainAuthSession(userRole).catch(() => {});
     fetchLogs();
     const cleanupSync = initOfflineSyncEngine(userRole);
     const interval = setInterval(fetchLogs, 6000);
@@ -93,7 +100,7 @@ const AppContent: React.FC = () => {
       return;
     }
     try {
-      const res = await fetch('/api/reset', { 
+      const res = await fetchWithAuth('/api/reset', { 
         method: 'POST',
         headers: {
           'x-user-role': userRole,
@@ -144,9 +151,12 @@ const AppContent: React.FC = () => {
     setActiveTab('attendance');
   };
 
-  // Derive unique workers
+  // Derive unique workers (combining registered labourers & attendance logs)
   const uniqueWorkers = useMemo(() => {
     const set = new Set<string>();
+    getStoredLabourers().forEach((l) => {
+      if (l.phoneNumber) set.add(l.phoneNumber);
+    });
     logs.forEach((log) => {
       if (log.phone_number) {
         set.add(log.phone_number);
@@ -155,6 +165,12 @@ const AppContent: React.FC = () => {
     return Array.from(set).sort();
   }, [logs]);
 
+  // Active shift for currently selected worker
+  const activeShiftLog = useMemo(() => {
+    if (selectedWorker === 'All Workers') return null;
+    return getActiveShiftForWorker(selectedWorker, logs);
+  }, [selectedWorker, logs]);
+
   // Filter logs for selected worker
   const filteredLogs = useMemo(() => {
     if (selectedWorker === 'All Workers') {
@@ -162,6 +178,7 @@ const AppContent: React.FC = () => {
     }
     return logs.filter((l) => l.phone_number === selectedWorker);
   }, [logs, selectedWorker]);
+
 
   const activeLaborersCount = uniqueWorkers.length;
   // Unique workdays (not raw count of multiple punch pins on same day)
@@ -201,7 +218,7 @@ const AppContent: React.FC = () => {
 
         {/* Authoritative Civic Muster Command Header */}
         <Header
-          onOpenSimulator={() => setIsSimulatorOpen(true)}
+          onOpenRegisterLabour={() => setIsRegisterModalOpen(true)}
           onRefresh={handleRefresh}
           onOpenTutorial={handleOpenTutorial}
           onPrintPassbook={() => {
@@ -214,7 +231,9 @@ const AppContent: React.FC = () => {
           onToggleZenMode={() => setIsZenMode(!isZenMode)}
           onOpenInstallModal={() => setIsInstallModalOpen(true)}
           isAppInstalled={isInstalled}
+          activeShiftWorker={activeShiftLog ? selectedWorker : null}
         />
+
 
         {/* Civic Muster Roll Summary Cards */}
         <MetricsOverview
@@ -298,7 +317,7 @@ const AppContent: React.FC = () => {
                 setActiveTab('worker');
               }
             }}
-            onOpenSimulator={() => setIsSimulatorOpen(true)}
+            onOpenRegisterLabour={() => setIsRegisterModalOpen(true)}
             onQuickCheckIn={handleQuickCheckIn}
             onResetData={handleResetData}
             onOpenTutorial={handleOpenTutorial}
@@ -317,6 +336,13 @@ const AppContent: React.FC = () => {
                 selectedWorker={selectedWorker}
                 workers={uniqueWorkers}
                 userRole={userRole}
+                onOpenLabourRegistration={() => setIsRegisterModalOpen(true)}
+                activeShiftLog={activeShiftLog}
+                onCheckOutShift={(checkedOutLog) => {
+                  setLogs((prev) => prev.map((l) => (l.id === checkedOutLog.id ? checkedOutLog : l)));
+                  setSelectedReceiptLog(checkedOutLog);
+                  triggerToast(`✓ Shift completed! ${checkedOutLog.hours_worked}h recorded. Wage sealed.`);
+                }}
               />
             )}
 
@@ -423,11 +449,16 @@ const AppContent: React.FC = () => {
         onClose={() => setSelectedReceiptLog(null)}
       />
 
-      <WhatsAppSimulatorModal
-        isOpen={isSimulatorOpen}
-        onClose={() => setIsSimulatorOpen(false)}
-        onLogCreated={handleLogCreated}
-        currentPhoneNumber={selectedWorker !== 'All Workers' ? selectedWorker : '+919876543210'}
+      <LabourRegistrationModal
+        isOpen={isRegisterModalOpen}
+        onClose={() => setIsRegisterModalOpen(false)}
+        onWorkerRegistered={(worker) => {
+          setSelectedWorker(worker.phoneNumber);
+          setActiveTab('attendance');
+          triggerToast(`✓ Labour ${worker.name} registered! Shramik Card ${worker.id} issued.`);
+          fetchLogs();
+        }}
+        defaultPhone={selectedWorker !== 'All Workers' ? selectedWorker : ''}
       />
 
       <TutorialModal
@@ -438,7 +469,7 @@ const AppContent: React.FC = () => {
           setActiveTab(tab);
           triggerToast(`✓ Switched to ${tab} view`);
         }}
-        onOpenSimulator={() => setIsSimulatorOpen(true)}
+        onOpenRegisterLabour={() => setIsRegisterModalOpen(true)}
       />
 
       <AndroidInstallModal

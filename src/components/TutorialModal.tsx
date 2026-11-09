@@ -34,7 +34,7 @@ interface TutorialModalProps {
   onClose: () => void;
   initialRole?: TutorialRole;
   onNavigateTab: (tab: 'all' | 'attendance' | 'register' | 'worker' | 'map') => void;
-  onOpenSimulator?: () => void;
+  onOpenRegisterLabour?: () => void;
 }
 
 export const TutorialModal: React.FC<TutorialModalProps> = ({
@@ -42,8 +42,9 @@ export const TutorialModal: React.FC<TutorialModalProps> = ({
   onClose,
   initialRole = 'worker',
   onNavigateTab,
-  onOpenSimulator,
+  onOpenRegisterLabour,
 }) => {
+
   const { language } = useLanguage();
   const [role, setRole] = useState<TutorialRole>(initialRole);
   const [currentStepIndex, setCurrentStepIndex] = useState<number>(0);
@@ -112,12 +113,14 @@ export const TutorialModal: React.FC<TutorialModalProps> = ({
 
   const handleActionClick = (step: TutorialStep) => {
     handleClose();
-    if (step.actionTab === 'simulator' && onOpenSimulator) {
-      onOpenSimulator();
+    if (step.actionTab === 'register') {
+      if (onOpenRegisterLabour) onOpenRegisterLabour();
+      else onNavigateTab('register');
     } else if (step.actionTab && step.actionTab !== 'simulator') {
-      onNavigateTab(step.actionTab);
+      onNavigateTab(step.actionTab as any);
     }
   };
+
 
   const toggleAudio = () => {
     if ('speechSynthesis' in window) {

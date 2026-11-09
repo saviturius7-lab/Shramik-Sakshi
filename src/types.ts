@@ -107,3 +107,27 @@ export interface CurrentUser {
   role: UserRole;
   phoneNumber?: string;
 }
+
+export interface RegisteredLabour {
+  id: string; // e.g. "SHR-2026-0814"
+  name: string;
+  phoneNumber: string;
+  trade: string; // Mason, Helper, Carpenter, Painter, Electrician, Plumber, Loader, Bar Bender, etc.
+  dailyWage: number;
+  worksite: string;
+  emergencyContact?: string;
+  aadhaarLastFour?: string;
+  registeredAt: string;
+  notes?: string;
+}
+
+export interface ShiftState {
+  isActive: boolean;
+  shiftLogId?: string;
+  checkInTime?: string;
+  worksite?: string;
+  elapsedHours?: number;
+  projectedWage?: number;
+  hourlyRate?: number;
+}
+
