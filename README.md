@@ -1,4 +1,4 @@
-# Shramik Sakshi (श्रमिक साक्षी)
+# Shramik Sakshi 
 ### Tactile Civic Field Ledger & Evidentiary Wage Accounting Engine for Informal Labor
 
 [![System Status](https://img.shields.io/badge/System-Production%20Hardened-emerald.svg)]()
