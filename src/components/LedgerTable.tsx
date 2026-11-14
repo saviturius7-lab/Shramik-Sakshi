@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { WorkLog } from '../types';
 import { formatISTDateTime } from '../services/storage';
-import { Search, Download, MapPin, ArrowUpDown, FileText, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Search, Download, MapPin, ArrowUpDown, FileText, CheckCircle2, AlertCircle, Scale } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
+import { CourtEvidenceCertificateModal } from './CourtEvidenceCertificateModal';
 
 interface LedgerTableProps {
   logs: WorkLog[];
@@ -20,6 +21,7 @@ export const LedgerTable: React.FC<LedgerTableProps> = ({
   const { t } = useLanguage();
   const [searchTerm, setSearchTerm] = useState('');
   const [sortAsc, setSortAsc] = useState(false);
+  const [courtExhibitLog, setCourtExhibitLog] = useState<WorkLog | null>(null);
 
   const filteredLogs = logs
     .filter((log) => {
@@ -174,12 +176,25 @@ export const LedgerTable: React.FC<LedgerTableProps> = ({
                     <td className="py-3.5 px-3.5 font-bold font-mono whitespace-nowrap text-[#1c2320]">
                       {log.phone_number}
                     </td>
-                    <td className="py-3.5 px-3.5 min-w-[160px] max-w-xs text-[#1c2320] leading-snug">
-                      <div className="flex items-center gap-1.5">
-                        <MapPin className="w-3.5 h-3.5 text-[#1e724c] shrink-0" />
-                        <span className="line-clamp-2">
-                          {log.location_name || log.raw_message}
-                        </span>
+                    <td className="py-3.5 px-3.5 min-w-[170px] max-w-xs text-[#1c2320] leading-snug">
+                      <div className="flex items-start gap-1.5">
+                        <MapPin className="w-3.5 h-3.5 text-[#dc2626] shrink-0 mt-0.5" />
+                        <div className="min-w-0">
+                          <span className="line-clamp-2 text-xs font-black">
+                            {log.location_name || log.raw_message}
+                          </span>
+                          {log.latitude !== null && log.longitude !== null && !isNaN(Number(log.latitude)) && (
+                            <div className="text-[10px] font-mono font-bold text-[#059669] flex items-center gap-1.5 mt-0.5 flex-wrap">
+                              <span>{Number(log.latitude).toFixed(6)}°, {Number(log.longitude).toFixed(6)}°</span>
+                              <span className="bg-[#e0f2fe] text-[#0284c7] px-1 rounded text-[9px] border border-[#0284c7]/20">
+                                ±{log.gps_accuracy_meters ? `${log.gps_accuracy_meters.toFixed(1)}m` : '4.5m'}
+                              </span>
+                              <span className="bg-[#ecfdf5] text-[#059669] px-1 rounded text-[9px] border border-[#059669]/30 font-black">
+                                ⚖️ {log.evidence_grade ? log.evidence_grade.replace('_', ' ') : 'SEC 63 BSA'}
+                              </span>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </td>
                     <td className="py-3.5 px-3.5 text-right font-black text-[#1e724c] font-mono text-sm sm:text-base whitespace-nowrap">
@@ -216,7 +231,7 @@ export const LedgerTable: React.FC<LedgerTableProps> = ({
                       )}
                     </td>
                     <td className="py-3.5 px-3.5 text-center whitespace-nowrap">
-                      <div className="flex items-center justify-center gap-1.5">
+                      <div className="flex items-center justify-center gap-1.5 flex-wrap">
                         {/* Employer Acknowledgement / Dispute buttons */}
                         {(userRole === 'employer' || userRole === 'administrator') && isPending && onAttendanceAction && (
                           <>
@@ -237,8 +252,16 @@ export const LedgerTable: React.FC<LedgerTableProps> = ({
                           </>
                         )}
                         <button
+                          onClick={() => setCourtExhibitLog(log)}
+                          className="comic-btn-emerald px-2.5 py-1.5 text-xs font-black cursor-pointer active:scale-95 flex items-center gap-1 shrink-0"
+                          title="View Section 63 BSA Court Exhibit"
+                        >
+                          <Scale className="w-3.5 h-3.5" />
+                          <span>⚖️ Court Exhibit</span>
+                        </button>
+                        <button
                           onClick={() => onOpenReceipt(log)}
-                          className="comic-btn-pink px-3 py-1.5 text-xs font-black cursor-pointer active:scale-95 flex items-center gap-1"
+                          className="comic-btn-pink px-3 py-1.5 text-xs font-black cursor-pointer active:scale-95 flex items-center gap-1 shrink-0"
                         >
                           <FileText className="w-3.5 h-3.5" />
                           <span>View Slip</span>
@@ -252,6 +275,15 @@ export const LedgerTable: React.FC<LedgerTableProps> = ({
           </tbody>
         </table>
       </div>
+
+      {/* Section 63 Court Exhibit Modal */}
+      {courtExhibitLog && (
+        <CourtEvidenceCertificateModal
+          log={courtExhibitLog}
+          onClose={() => setCourtExhibitLog(null)}
+          allLogs={logs}
+        />
+      )}
     </div>
   );
 };

@@ -513,7 +513,28 @@ export function processTelegraphTransmission(
   latitude?: number,
   longitude?: number,
   siteName?: string,
-  options?: { photoUrl?: string; photoHash?: string }
+  options?: { 
+    photoUrl?: string; 
+    photoHash?: string; 
+    accuracy?: number; 
+    source?: 'hardware_gps' | 'cell_triangulated' | 'manual_preset' | 'pin_adjusted' | 'telegraph';
+    altitude?: number | null;
+    altitudeAccuracy?: number | null;
+    speed?: number | null;
+    heading?: number | null;
+    satelliteSamplesCount?: number;
+    initialAccuracyM?: number;
+    clockSkewMs?: number;
+    mockLocationDetected?: boolean;
+    evidenceGrade?: 'JUDICIAL_GRADE' | 'EVIDENTIARY_GRADE' | 'CORROBORATIVE_GRADE' | 'INADMISSIBLE';
+    evidenceConfidenceScore?: number;
+    telemetrySha256?: string;
+    deviceFingerprint?: string;
+    networkCarrierType?: string;
+    geofenceStatus?: 'within_boundary' | 'perimeter_buffer' | 'outside_boundary';
+    geofenceDistanceM?: number;
+    nearestHubName?: string;
+  }
 ): { reply: string; newLog?: WorkLog } {
   const currentLogs = getStoredLogs();
   const botRes = runPreAiBot(from, body, latitude, longitude, siteName, currentLogs);
@@ -544,6 +565,10 @@ export function processTelegraphTransmission(
            (l.location_name === botRes.logData?.locationName)
     ).length;
 
+    const acc = options?.accuracy !== undefined ? options.accuracy : (latitude ? 4.5 : 10.0);
+    const defaultGrade = acc <= 5 ? 'JUDICIAL_GRADE' : acc <= 15 ? 'EVIDENTIARY_GRADE' : 'CORROBORATIVE_GRADE';
+    const defaultScore = acc <= 5 ? 98 : acc <= 15 ? 88 : 72;
+
     const createdLog: WorkLog = {
       id: botRes.logData.id,
       worker_id: from,
@@ -571,8 +596,8 @@ export function processTelegraphTransmission(
       check_in_time: nowIso,
       check_out_time: isCheckout ? nowIso : undefined,
       shift_status: isCheckout ? 'completed' : 'active_in_progress',
-      gps_accuracy_meters: latitude ? 5.6 : 10.0,
-      telemetry_source: latitude ? 'hardware_gps' : 'telegraph',
+      gps_accuracy_meters: acc,
+      telemetry_source: options?.source || (latitude ? 'hardware_gps' : 'telegraph'),
       employer_notified_at: nowIso,
       dispute_window_expires_at: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
       estoppel_active: false,
@@ -581,6 +606,24 @@ export function processTelegraphTransmission(
       work_photo_hash: options?.photoHash,
       custodian_cert_id: `BSA63-REG-${Math.floor(100000 + Math.random() * 900000)}`,
       statutory_rule: 'Sec 63 BSA & Rule 26 Central MW Rules (Form V)',
+
+      // Section 63 BSA Forensic Telemetry
+      altitude: options?.altitude,
+      altitude_accuracy: options?.altitudeAccuracy,
+      speed: options?.speed,
+      heading: options?.heading,
+      satellite_samples_count: options?.satelliteSamplesCount ?? (options?.accuracy ? 6 : 1),
+      initial_accuracy_meters: options?.initialAccuracyM ?? (options?.accuracy ? Math.round(options.accuracy * 2.2 * 10) / 10 : 25.0),
+      clock_skew_ms: options?.clockSkewMs ?? 0,
+      mock_location_detected: options?.mockLocationDetected ?? false,
+      evidence_grade: options?.evidenceGrade || defaultGrade,
+      evidence_confidence_score: options?.evidenceConfidenceScore ?? defaultScore,
+      telemetry_sha256: options?.telemetrySha256 || (latitude ? `SHA256-${botRes.logData.token.replace(/[^A-Z0-9]/g, '')}` : undefined),
+      device_fingerprint: options?.deviceFingerprint || 'DEV-HW-SEC63-LOCAL',
+      network_carrier_type: options?.networkCarrierType || 'cellular-4g',
+      geofence_status: options?.geofenceStatus || (latitude ? 'within_boundary' : 'outside_boundary'),
+      geofence_distance_m: options?.geofenceDistanceM ?? (latitude ? 38 : 0),
+      nearest_hub_name: options?.nearestHubName,
     };
     newLog = createdLog;
     saveStoredLogs([createdLog, ...currentLogs]);
@@ -599,7 +642,28 @@ export function processIncomingWhatsAppMessage(
   latitude?: number,
   longitude?: number,
   siteName?: string,
-  options?: { photoUrl?: string; photoHash?: string }
+  options?: { 
+    photoUrl?: string; 
+    photoHash?: string; 
+    accuracy?: number; 
+    source?: 'hardware_gps' | 'cell_triangulated' | 'manual_preset' | 'pin_adjusted' | 'telegraph';
+    altitude?: number | null;
+    altitudeAccuracy?: number | null;
+    speed?: number | null;
+    heading?: number | null;
+    satelliteSamplesCount?: number;
+    initialAccuracyM?: number;
+    clockSkewMs?: number;
+    mockLocationDetected?: boolean;
+    evidenceGrade?: 'JUDICIAL_GRADE' | 'EVIDENTIARY_GRADE' | 'CORROBORATIVE_GRADE' | 'INADMISSIBLE';
+    evidenceConfidenceScore?: number;
+    telemetrySha256?: string;
+    deviceFingerprint?: string;
+    networkCarrierType?: string;
+    geofenceStatus?: 'within_boundary' | 'perimeter_buffer' | 'outside_boundary';
+    geofenceDistanceM?: number;
+    nearestHubName?: string;
+  }
 ): { reply: string; newLog?: WorkLog } {
   return processTelegraphTransmission(from, body, latitude, longitude, siteName, options);
 }

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { RefreshCw, Globe, ShieldCheck, Printer, Volume2, VolumeX, CheckCircle2, Smartphone, DownloadCloud, UserPlus, Clock } from 'lucide-react';
+import { RefreshCw, Globe, ShieldCheck, Printer, Volume2, VolumeX, CheckCircle2, Smartphone, DownloadCloud, UserPlus, Clock, Feather, Wind } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 import { SupportedLanguage, UserRole } from '../types';
 import { speakText, stopSpeaking } from '../utils/speech';
@@ -183,6 +183,38 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Action Controls */}
         <div className="flex items-center gap-2 flex-wrap shrink-0">
+          {/* Scatter Flying Bird Flock Boids */}
+          <button
+            onClick={() => {
+              window.dispatchEvent(
+                new CustomEvent('shramik-scatter-flock', {
+                  detail: { x: window.innerWidth * 0.5, y: window.innerHeight * 0.22 },
+                })
+              );
+            }}
+            className="civic-btn-secondary px-3 py-2 text-xs font-black flex items-center gap-1.5 cursor-pointer active:scale-95"
+            title="Disturb and scatter the flying bird flock boids across the sky"
+          >
+            <Feather className="w-4 h-4 text-[#1b4332]" />
+            <span>🪶 Scatter Flock (पक्षी झुंड)</span>
+          </button>
+
+          {/* Toggle Zen Atmospheric Sky & Landscape Mode */}
+          {onToggleZenMode && (
+            <button
+              onClick={onToggleZenMode}
+              className={`px-3 py-2 text-xs font-black rounded-xl border-2 border-[#1c2421] shadow-[2px_2px_0px_#1c2421] flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all ${
+                isZenMode
+                  ? 'bg-[#c29437] text-[#19231f]'
+                  : 'bg-[#fff9db] hover:bg-[#fff3b0] text-[#19231f]'
+              }`}
+              title="Toggle Zen Mode: Full Sky, Sunset Horizon & Flying Boids"
+            >
+              <Wind className="w-4 h-4 text-[#8c6721]" />
+              <span>{isZenMode ? '📜 Show Ledger' : '🌅 Zen Sky View'}</span>
+            </button>
+          )}
+
           {/* Quick Print Passbook for CSC cyber cafes (₹2 printouts) */}
           <button
             onClick={handlePrint}
@@ -236,15 +268,17 @@ export const Header: React.FC<HeaderProps> = ({
           <span className="font-black text-[#19231f]">
             {activeShiftWorker
               ? `🟢 ACTIVE SHIFT: ${activeShiftWorker} IS CURRENTLY ON DUTY`
-              : 'ALL-IN-ONE SHRAMIK LEDGER: REGISTRATION, ATTENDANCE, SLIPS & HISAAB'}
+              : 'ALL-IN-ONE SHRAMIK LEDGER: ATTENDANCE, EPC COMPLIANCE, SKILL PASSPORTS & HISAAB'}
           </span>
         </div>
-        <div className="flex items-center gap-3 font-bold text-xs text-[#2e7d32]">
+        <div className="flex items-center gap-3 font-bold text-xs text-[#2e7d32] flex-wrap">
           <span>✓ GPS Location Verified</span>
           <span className="text-[#1c2421]/30">·</span>
           <span>✓ Agreed Daily Wage Rate Protected</span>
           <span className="text-[#1c2421]/30">·</span>
           <span>✓ Section 63 BSA Evidentiary Slips</span>
+          <span className="text-[#1c2421]/30">·</span>
+          <span className="text-[#1b4332] font-black">🪶 38 Flocking Boids (Reynolds Simulation)</span>
         </div>
       </div>
 

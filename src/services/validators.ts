@@ -62,3 +62,30 @@ export const attendanceActionSchema = z.object({
   ...data,
   attendanceId: data.attendanceId || data.id || '',
 })).refine(data => Boolean(data.attendanceId), { message: 'attendanceId is required' });
+
+export const retentionHoldSchema = z.object({
+  siteKey: z.string().min(2).max(160),
+  contractorName: z.string().min(2).max(120).default('Site Sub-Contractor'),
+  held: z.boolean(),
+  reason: z.string().max(300).optional(),
+});
+
+export const bulkAcknowledgeSchema = z.object({
+  attendanceIds: z.array(z.string().min(1)).min(1).max(200),
+});
+
+export const siteOfferCreateSchema = z.object({
+  workerPhone: phoneSchema,
+  workerName: z.string().min(1).max(120),
+  trade: z.string().min(1).max(120),
+  employerName: z.string().min(2).max(120),
+  projectSite: z.string().min(2).max(160),
+  offeredDailyWage: z.number().min(200).max(25000),
+  durationDays: z.number().int().min(1).max(365),
+  startDate: z.string().min(4).max(30),
+});
+
+export const siteOfferActionSchema = z.object({
+  status: z.enum(['accepted', 'declined']),
+});
+

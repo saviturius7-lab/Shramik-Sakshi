@@ -1,9 +1,21 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { WorkLog, UserRole } from './types';
+import {
+  WorkLog,
+  UserRole,
+  RegisteredLabour,
+  RetentionHoldRecord,
+  SiteDeploymentOffer,
+} from './types';
 import { 
   getStoredLogs, resetStoredLogs, saveStoredLogs, initOfflineSyncEngine, 
-  getActiveShiftForWorker, getStoredLabourers 
+  getActiveShiftForWorker, getStoredLabourers, fetchAllLabourers 
 } from './services/storage';
+import {
+  getStoredRetentionHolds,
+  saveStoredRetentionHolds,
+  getStoredSiteOffers,
+  saveStoredSiteOffers,
+} from './services/enterpriseCompliance';
 import { Header } from './components/Header';
 import { NetworkSyncRibbon } from './components/NetworkSyncRibbon';
 import { Sidebar } from './components/Sidebar';
@@ -12,6 +24,8 @@ import { MetricsOverview } from './components/MetricsOverview';
 import { WorkerProfile } from './components/WorkerProfile';
 import { LiveMap } from './components/LiveMap';
 import { LedgerTable } from './components/LedgerTable';
+import { EnterpriseComplianceConsole } from './components/EnterpriseComplianceConsole';
+import { WorkforceTalentBench } from './components/WorkforceTalentBench';
 import { DigitalReceiptModal } from './components/DigitalReceiptModal';
 import { LabourRegistrationModal } from './components/LabourRegistrationModal';
 import { TutorialModal } from './components/TutorialModal';
@@ -19,15 +33,18 @@ import { AndroidInstallModal } from './components/AndroidInstallModal';
 import { usePWAInstall } from './hooks/usePWAInstall';
 import { LanguageProvider, useLanguage } from './context/LanguageContext';
 import { fetchWithAuth, obtainAuthSession } from './services/auth';
-import { CheckSquare, ListFilter, UserCheck, Map, LayoutGrid, BookOpen, HardHat, ClipboardCheck, Smartphone, UserPlus } from 'lucide-react';
+import { CheckSquare, ListFilter, UserCheck, Map, LayoutGrid, Building2, Award, HardHat, ClipboardCheck, Smartphone } from 'lucide-react';
 
 import { BoidsCanvas } from './components/BoidsCanvas';
 
-type ActiveViewTab = 'all' | 'attendance' | 'register' | 'worker' | 'map';
+type ActiveViewTab = 'all' | 'attendance' | 'register' | 'worker' | 'map' | 'compliance' | 'talent';
 
 const AppContent: React.FC = () => {
   const { language, t } = useLanguage();
   const [logs, setLogs] = useState<WorkLog[]>([]);
+  const [workersRegistry, setWorkersRegistry] = useState<RegisteredLabour[]>(() => getStoredLabourers());
+  const [retentionHolds, setRetentionHolds] = useState<RetentionHoldRecord[]>(() => getStoredRetentionHolds());
+  const [siteOffers, setSiteOffers] = useState<SiteDeploymentOffer[]>(() => getStoredSiteOffers());
   const [userRole, setUserRole] = useState<UserRole>('worker');
   const [selectedWorker, setSelectedWorker] = useState<string>('All Workers');
   const [selectedReceiptLog, setSelectedReceiptLog] = useState<WorkLog | null>(null);
@@ -40,14 +57,14 @@ const AppContent: React.FC = () => {
   const [isZenMode, setIsZenMode] = useState<boolean>(false);
   const [isInstallModalOpen, setIsInstallModalOpen] = useState<boolean>(false);
 
-  const { isInstalled, canInstall, isAndroid, isStandalone, promptInstall } = usePWAInstall();
+  const { isInstalled, canInstall, isAndroid, promptInstall } = usePWAInstall();
 
   const handleOpenTutorial = (role: 'worker' | 'admin' = 'worker') => {
     setTutorialRole(role);
     setIsTutorialOpen(true);
   };
 
-  // Sync logs from backend and localStorage
+  // Sync logs, workers, compliance holds, and recruitment offers
   const fetchLogs = async () => {
     try {
       const res = await fetchWithAuth('/api/logs', {
@@ -70,13 +87,48 @@ const AppContent: React.FC = () => {
     setLogs(local);
   };
 
+  const fetchEnterpriseState = async () => {
+    try {
+      const [workersList, holdsRes, offersRes] = await Promise.all([
+        fetchAllLabourers(),
+        fetchWithAuth('/api/compliance/holds').catch(() => null),
+        fetchWithAuth('/api/recruitment/offers').catch(() => null),
+      ]);
+      setWorkersRegistry(workersList);
+      if (holdsRes && holdsRes.ok) {
+        const holdsData = await holdsRes.json();
+        if (Array.isArray(holdsData.holds)) {
+          setRetentionHolds(holdsData.holds);
+          saveStoredRetentionHolds(holdsData.holds);
+        }
+      }
+      if (offersRes && offersRes.ok) {
+        const offersData = await offersRes.json();
+        if (Array.isArray(offersData.offers)) {
+          setSiteOffers(offersData.offers);
+          saveStoredSiteOffers(offersData.offers);
+        }
+      }
+    } catch {
+      // Offline fallback already loaded in initial state
+    }
+  };
+
   useEffect(() => {
-    // Keep auth session aligned with active user role
-    obtainAuthSession(userRole).catch(() => {});
-    fetchLogs();
+    let active = true;
+    obtainAuthSession(userRole)
+      .then(() => {
+        if (!active) return;
+        fetchLogs();
+        fetchEnterpriseState();
+      })
+      .catch(() => {
+        fetchLogs();
+      });
     const cleanupSync = initOfflineSyncEngine(userRole);
     const interval = setInterval(fetchLogs, 6000);
     return () => {
+      active = false;
       cleanupSync();
       clearInterval(interval);
     };
@@ -90,7 +142,7 @@ const AppContent: React.FC = () => {
   };
 
   const handleRefresh = async () => {
-    await fetchLogs();
+    await Promise.all([fetchLogs(), fetchEnterpriseState()]);
     triggerToast('✓ Register synchronized with latest records.');
   };
 
@@ -122,7 +174,7 @@ const AppContent: React.FC = () => {
 
   const handleAttendanceAction = async (id: string, action: 'acknowledge' | 'dispute') => {
     try {
-      const res = await fetch('/api/attendance/action', {
+      const res = await fetchWithAuth('/api/attendance/action', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -142,6 +194,124 @@ const AppContent: React.FC = () => {
     }
   };
 
+  const handleToggleRetentionHold = async (siteKey: string, contractorName: string, held: boolean) => {
+    const optimistic: RetentionHoldRecord = {
+      siteKey,
+      contractorName,
+      held,
+      updatedAt: new Date().toISOString(),
+      updatedByRole: userRole,
+    };
+    try {
+      await obtainAuthSession(userRole);
+      const res = await fetchWithAuth('/api/compliance/holds', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-user-role': userRole },
+        body: JSON.stringify({ siteKey, contractorName, held }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.holds)) {
+          setRetentionHolds(data.holds);
+          saveStoredRetentionHolds(data.holds);
+          triggerToast(held ? `Retention hold placed for ${contractorName}` : `Retention hold released for ${contractorName}`);
+          return;
+        }
+      }
+    } catch {}
+    const next = [optimistic, ...retentionHolds.filter((h) => h.siteKey !== siteKey)];
+    setRetentionHolds(next);
+    saveStoredRetentionHolds(next);
+    triggerToast(held ? `Retention hold placed for ${contractorName}` : `Retention hold released for ${contractorName}`);
+  };
+
+  const handleBulkAcknowledgeSite = async (attendanceIds: string[], siteName: string) => {
+    try {
+      await obtainAuthSession(userRole);
+      const res = await fetchWithAuth('/api/compliance/bulk-acknowledge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-user-role': userRole },
+        body: JSON.stringify({ attendanceIds }),
+      });
+      if (res.ok) {
+        triggerToast(`✓ Confirmed ${attendanceIds.length} clean muster slips at ${siteName}`);
+        await fetchLogs();
+        return;
+      }
+    } catch {}
+    const idSet = new Set(attendanceIds);
+    const updated = logs.map((l) =>
+      idSet.has(l.id)
+        ? { ...l, verification_status: 'attendance_acknowledged' as const, status: 'verified' as const, estoppel_active: true }
+        : l
+    );
+    setLogs(updated);
+    saveStoredLogs(updated);
+    triggerToast(`✓ Confirmed ${attendanceIds.length} clean muster slips at ${siteName}`);
+  };
+
+  const handleCreateSiteOffer = async (offerData: {
+    workerPhone: string;
+    workerName: string;
+    trade: string;
+    employerName: string;
+    projectSite: string;
+    offeredDailyWage: number;
+    durationDays: number;
+    startDate: string;
+  }) => {
+    try {
+      await obtainAuthSession(userRole);
+      const res = await fetchWithAuth('/api/recruitment/offers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-user-role': userRole },
+        body: JSON.stringify(offerData),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.offers)) {
+          setSiteOffers(data.offers);
+          saveStoredSiteOffers(data.offers);
+          triggerToast(`✓ Deployment offer sent to ${offerData.workerName} (₹${offerData.offeredDailyWage}/day)`);
+          return;
+        }
+      }
+    } catch {}
+    const fallbackOffer: SiteDeploymentOffer = {
+      id: `OFFER-2026-${Math.floor(100 + Math.random() * 900)}`,
+      ...offerData,
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+    };
+    const next = [fallbackOffer, ...siteOffers];
+    setSiteOffers(next);
+    saveStoredSiteOffers(next);
+    triggerToast(`✓ Deployment offer saved for ${offerData.workerName}`);
+  };
+
+  const handleRespondSiteOffer = async (offerId: string, status: 'accepted' | 'declined') => {
+    try {
+      const res = await fetchWithAuth(`/api/recruitment/offers/${offerId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.offers)) {
+          setSiteOffers(data.offers);
+          saveStoredSiteOffers(data.offers);
+          triggerToast(status === 'accepted' ? '✓ Site deployment offer accepted' : 'Offer declined');
+          return;
+        }
+      }
+    } catch {}
+    const next = siteOffers.map((o) => (o.id === offerId ? { ...o, status } : o));
+    setSiteOffers(next);
+    saveStoredSiteOffers(next);
+    triggerToast(status === 'accepted' ? '✓ Site deployment offer accepted' : 'Offer declined');
+  };
+
   const handleLogCreated = (newLog: WorkLog) => {
     setLogs((prev) => [newLog, ...prev]);
     triggerToast(`✓ New attendance slip #${newLog.verification_token} issued to ${newLog.phone_number}!`);
@@ -154,7 +324,7 @@ const AppContent: React.FC = () => {
   // Derive unique workers (combining registered labourers & attendance logs)
   const uniqueWorkers = useMemo(() => {
     const set = new Set<string>();
-    getStoredLabourers().forEach((l) => {
+    workersRegistry.forEach((l) => {
       if (l.phoneNumber) set.add(l.phoneNumber);
     });
     logs.forEach((log) => {
@@ -163,7 +333,7 @@ const AppContent: React.FC = () => {
       }
     });
     return Array.from(set).sort();
-  }, [logs]);
+  }, [logs, workersRegistry]);
 
   // Active shift for currently selected worker
   const activeShiftLog = useMemo(() => {
@@ -196,8 +366,35 @@ const AppContent: React.FC = () => {
 
   return (
     <div className="min-h-screen relative font-sans flex flex-col selection:bg-[#c29437] selection:text-[#19231f]">
-      {/* 2D Artistic Landscape Imitation (Pink-Yellowish Sky, Endless Green Fields & Cottage) */}
-      <BoidsCanvas opacity={isZenMode ? 1 : 0.96} />
+      {/* 2D Artistic Landscape with Craig Reynolds Flying Bird Flock Boids */}
+      <BoidsCanvas opacity={isZenMode ? 1 : 0.96} flockSize={38} />
+
+      {/* Floating Quick Zen Controls when in atmospheric sky view */}
+      {isZenMode && (
+        <div className="fixed top-4 left-4 z-50 bg-[#fffdfa]/95 backdrop-blur-xs border-2 border-[#1c2421] rounded-2xl p-2 sm:p-2.5 shadow-[4px_4px_0px_#1c2421] flex items-center gap-2 animate-fade-in no-print">
+          <button
+            onClick={() => setIsZenMode(false)}
+            className="civic-btn-primary px-3 py-1.5 text-xs font-black flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95"
+          >
+            <span>📜 Restore Ledger</span>
+          </button>
+          <button
+            onClick={() => {
+              window.dispatchEvent(
+                new CustomEvent('shramik-scatter-flock', {
+                  detail: { x: window.innerWidth * 0.5, y: window.innerHeight * 0.22 },
+                })
+              );
+            }}
+            className="civic-btn-brass px-3 py-1.5 text-xs font-black flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95"
+          >
+            <span>🪶 Scatter Flock</span>
+          </button>
+          <span className="text-[11px] font-bold text-[#1b4332] hidden sm:inline pl-1 border-l border-[#1c2421]/20">
+            Click anywhere on the sky to send wind waves
+          </span>
+        </div>
+      )}
 
       {/* Whimsical Comic Toast */}
       {toastMessage && (
@@ -282,7 +479,7 @@ const AppContent: React.FC = () => {
 
           <button
             onClick={() => setActiveTab('map')}
-            className={`px-4 py-2.5 text-xs sm:text-sm font-black flex items-center gap-2 whitespace-nowrap transition-all duration-150 cursor-pointer active:scale-95 rounded-2xl border-2 border-[#232b28] ${
+            className={`px-4 py-2.5 text-xs sm:text-sm font-black flex items-center gap-2 whitespace-nowrap shrink-0 transition-all duration-150 cursor-pointer active:scale-95 rounded-2xl border-2 border-[#232b28] ${
               activeTab === 'map'
                 ? 'bg-[#4d7c0f] text-white shadow-[3px_3px_0px_#232b28]'
                 : 'comic-btn-cream text-[#232b28]'
@@ -293,8 +490,32 @@ const AppContent: React.FC = () => {
           </button>
 
           <button
+            onClick={() => setActiveTab('compliance')}
+            className={`px-4 py-2.5 text-xs sm:text-sm font-black flex items-center gap-2 whitespace-nowrap shrink-0 transition-all duration-150 cursor-pointer active:scale-95 rounded-2xl border-2 border-[#232b28] ${
+              activeTab === 'compliance'
+                ? 'bg-[#19231f] text-white shadow-[3px_3px_0px_#232b28]'
+                : 'comic-btn-cream text-[#232b28]'
+            }`}
+          >
+            <Building2 className="w-4 h-4 text-[#c29437]" />
+            <span>🏢 5. {t.tabComplianceConsole}</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('talent')}
+            className={`px-4 py-2.5 text-xs sm:text-sm font-black flex items-center gap-2 whitespace-nowrap shrink-0 transition-all duration-150 cursor-pointer active:scale-95 rounded-2xl border-2 border-[#232b28] ${
+              activeTab === 'talent'
+                ? 'bg-[#8c6721] text-white shadow-[3px_3px_0px_#232b28]'
+                : 'comic-btn-cream text-[#232b28]'
+            }`}
+          >
+            <Award className="w-4 h-4 text-[#fde047]" />
+            <span>🪪 6. {t.tabTalentBench}</span>
+          </button>
+
+          <button
             onClick={() => setActiveTab('all')}
-            className={`px-3.5 py-2.5 text-xs sm:text-sm font-black flex items-center gap-2 whitespace-nowrap transition-all duration-150 cursor-pointer active:scale-95 rounded-2xl border-2 border-[#232b28] ${
+            className={`px-3.5 py-2.5 text-xs sm:text-sm font-black flex items-center gap-2 whitespace-nowrap shrink-0 transition-all duration-150 cursor-pointer active:scale-95 rounded-2xl border-2 border-[#232b28] ${
               activeTab === 'all'
                 ? 'bg-[#374151] text-white shadow-[3px_3px_0px_#232b28]'
                 : 'comic-btn-cream text-[#232b28]'
@@ -352,6 +573,9 @@ const AppContent: React.FC = () => {
                 selectedWorker={selectedWorker}
                 workerLogs={filteredLogs}
                 allLogs={logs}
+                workers={workersRegistry}
+                offers={siteOffers}
+                onRespondOffer={handleRespondSiteOffer}
                 onOpenReceipt={(log) => setSelectedReceiptLog(log)}
               />
             )}
@@ -366,12 +590,44 @@ const AppContent: React.FC = () => {
               />
             )}
 
-            {/* 4. Map Deployment Section */}
+            {/* 4. Fluid GIS Map Deployment Section */}
             {(activeTab === 'all' || activeTab === 'map') && (
               <LiveMap
                 logs={filteredLogs}
                 selectedWorker={selectedWorker}
                 onOpenReceipt={(log) => setSelectedReceiptLog(log)}
+              />
+            )}
+
+            {/* 5. Pivot 1: Enterprise EPC & Principal Employer Compliance Console */}
+            {(activeTab === 'all' || activeTab === 'compliance') && (
+              <EnterpriseComplianceConsole
+                logs={logs}
+                workers={workersRegistry}
+                holds={retentionHolds}
+                userRole={userRole}
+                onSwitchRole={setUserRole}
+                onToggleRetentionHold={handleToggleRetentionHold}
+                onBulkAcknowledgeSite={handleBulkAcknowledgeSite}
+                onAttendanceAction={handleAttendanceAction}
+                onOpenReceipt={(log) => setSelectedReceiptLog(log)}
+              />
+            )}
+
+            {/* 6. Pivot 3: Verified Workforce Bench & Skill/Credit Credentials */}
+            {(activeTab === 'all' || activeTab === 'talent') && (
+              <WorkforceTalentBench
+                logs={logs}
+                workers={workersRegistry}
+                offers={siteOffers}
+                userRole={userRole}
+                onSwitchRole={setUserRole}
+                onCreateOffer={handleCreateSiteOffer}
+                onRespondOffer={handleRespondSiteOffer}
+                onSelectWorkerPassbook={(phone) => {
+                  setSelectedWorker(phone);
+                  setActiveTab('worker');
+                }}
               />
             )}
           </main>
@@ -457,6 +713,7 @@ const AppContent: React.FC = () => {
           setActiveTab('attendance');
           triggerToast(`✓ Labour ${worker.name} registered! Shramik Card ${worker.id} issued.`);
           fetchLogs();
+          fetchEnterpriseState();
         }}
         defaultPhone={selectedWorker !== 'All Workers' ? selectedWorker : ''}
       />

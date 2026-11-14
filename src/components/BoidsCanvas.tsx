@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 
 interface ArtisticLandscapeProps {
   opacity?: number;
+  flockSize?: number;
 }
 
 interface SmoothCloud {
@@ -15,24 +16,505 @@ interface SmoothCloud {
   variant: 0 | 1 | 2;
 }
 
-interface Bird {
+interface ShockwaveRipple {
   x: number;
   y: number;
-  vx: number;
-  vy: number;
-  size: number;
-  wingPhase: number;
-  wingSpeed: number;
+  radius: number;
+  maxRadius: number;
+  strength: number;
+  opacity: number;
 }
 
-export const BoidsCanvas: React.FC<ArtisticLandscapeProps> = ({ opacity = 1 }) => {
+// --------------------------------------------------------------------------------
+// 2D VECTOR UTILITY FOR CRAIG REYNOLDS FLOCKING
+// --------------------------------------------------------------------------------
+class Vec2 {
+  constructor(public x: number = 0, public y: number = 0) {}
+
+  add(v: Vec2): Vec2 {
+    this.x += v.x;
+    this.y += v.y;
+    return this;
+  }
+
+  sub(v: Vec2): Vec2 {
+    this.x -= v.x;
+    this.y -= v.y;
+    return this;
+  }
+
+  mult(n: number): Vec2 {
+    this.x *= n;
+    this.y *= n;
+    return this;
+  }
+
+  div(n: number): Vec2 {
+    if (n !== 0) {
+      this.x /= n;
+      this.y /= n;
+    }
+    return this;
+  }
+
+  mag(): number {
+    return Math.sqrt(this.x * this.x + this.y * this.y);
+  }
+
+  magSq(): number {
+    return this.x * this.x + this.y * this.y;
+  }
+
+  heading(): number {
+    return Math.atan2(this.y, this.x);
+  }
+
+  normalize(): Vec2 {
+    const m = this.mag();
+    if (m > 0.00001) {
+      this.div(m);
+    }
+    return this;
+  }
+
+  limit(max: number): Vec2 {
+    const mSq = this.magSq();
+    if (mSq > max * max) {
+      this.div(Math.sqrt(mSq)).mult(max);
+    }
+    return this;
+  }
+
+  dist(v: Vec2): number {
+    const dx = this.x - v.x;
+    const dy = this.y - v.y;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  clone(): Vec2 {
+    return new Vec2(this.x, this.y);
+  }
+}
+
+// --------------------------------------------------------------------------------
+// CRAIG REYNOLDS BOID CLASS: SEPARATION, ALIGNMENT, COHESION & WING KINEMATICS
+// --------------------------------------------------------------------------------
+class FlockBoid {
+  pos: Vec2;
+  vel: Vec2;
+  acc: Vec2;
+  zDepth: number; // 0.45 (distant) to 1.0 (foreground)
+  maxSpeed: number;
+  maxForce: number;
+  wingPhase: number;
+  wingSpeed: number;
+  prevHeading: number;
+  bankAngle: number;
+  size: number;
+  isGliding: boolean;
+  subFlockId: number;
+
+  constructor(width: number, height: number, subFlockId: number = 0) {
+    // Distribute birds across the sky zone (upper 50% of viewport)
+    const initX = Math.random() * width;
+    const initY = height * 0.06 + Math.random() * (height * 0.42);
+    this.pos = new Vec2(initX, initY);
+
+    // Initial velocity: gentle eastward/southeast drift with natural variation
+    const initialAngle = -0.15 + (Math.random() - 0.5) * 0.7;
+    const initialSpeed = 1.8 + Math.random() * 1.4;
+    this.vel = new Vec2(Math.cos(initialAngle) * initialSpeed, Math.sin(initialAngle) * initialSpeed);
+    this.acc = new Vec2(0, 0);
+
+    // Depth layer for parallax depth perception
+    this.zDepth = 0.45 + Math.random() * 0.55;
+    this.size = (7 + Math.random() * 4) * this.zDepth;
+    this.maxSpeed = (2.2 + Math.random() * 1.6) * (0.7 + this.zDepth * 0.3);
+    this.maxForce = 0.07 + Math.random() * 0.04;
+
+    this.wingPhase = Math.random() * Math.PI * 2;
+    this.wingSpeed = 0.16;
+    this.prevHeading = this.vel.heading();
+    this.bankAngle = 0;
+    this.isGliding = false;
+    this.subFlockId = subFlockId;
+  }
+
+  applyForce(force: Vec2) {
+    this.acc.add(force);
+  }
+
+  // Craig Reynolds Steering Rule 1: Separation
+  // Steer to avoid crowding local flockmates
+  separate(boids: FlockBoid[]): Vec2 {
+    const desiredSeparation = 32 * this.zDepth;
+    const steer = new Vec2(0, 0);
+    let count = 0;
+
+    for (let i = 0; i < boids.length; i++) {
+      const other = boids[i];
+      if (other === this) continue;
+      const d = this.pos.dist(other.pos);
+      if (d > 0 && d < desiredSeparation) {
+        // Calculate vector pointing away from neighbor, weighted inversely by distance
+        const diff = this.pos.clone().sub(other.pos);
+        diff.normalize();
+        diff.div(d); // Closer neighbors push harder
+        steer.add(diff);
+        count++;
+      }
+    }
+
+    if (count > 0) {
+      steer.div(count);
+      if (steer.mag() > 0) {
+        steer.normalize();
+        steer.mult(this.maxSpeed);
+        steer.sub(this.vel);
+        steer.limit(this.maxForce * 1.5);
+      }
+    }
+    return steer;
+  }
+
+  // Craig Reynolds Steering Rule 2: Alignment
+  // Steer towards the average heading/velocity of local flockmates
+  align(boids: FlockBoid[]): Vec2 {
+    const neighborDist = 80 * this.zDepth;
+    const sum = new Vec2(0, 0);
+    let count = 0;
+
+    for (let i = 0; i < boids.length; i++) {
+      const other = boids[i];
+      if (other === this) continue;
+      // Slight preference for own sub-flock
+      const sameSubFlockBonus = other.subFlockId === this.subFlockId ? 1.2 : 0.8;
+      const d = this.pos.dist(other.pos);
+      if (d > 0 && d < neighborDist * sameSubFlockBonus) {
+        sum.add(other.vel);
+        count++;
+      }
+    }
+
+    if (count > 0) {
+      sum.div(count);
+      sum.normalize();
+      sum.mult(this.maxSpeed);
+      const steer = sum.sub(this.vel);
+      steer.limit(this.maxForce);
+      return steer;
+    }
+    return new Vec2(0, 0);
+  }
+
+  // Craig Reynolds Steering Rule 3: Cohesion
+  // Steer towards the average position (center of mass) of local flockmates
+  cohere(boids: FlockBoid[]): Vec2 {
+    const neighborDist = 110 * this.zDepth;
+    const sum = new Vec2(0, 0);
+    let count = 0;
+
+    for (let i = 0; i < boids.length; i++) {
+      const other = boids[i];
+      if (other === this) continue;
+      const sameSubFlockBonus = other.subFlockId === this.subFlockId ? 1.25 : 0.75;
+      const d = this.pos.dist(other.pos);
+      if (d > 0 && d < neighborDist * sameSubFlockBonus) {
+        sum.add(other.pos);
+        count++;
+      }
+    }
+
+    if (count > 0) {
+      sum.div(count);
+      return this.seek(sum);
+    }
+    return new Vec2(0, 0);
+  }
+
+  // Seek target position
+  seek(target: Vec2): Vec2 {
+    const desired = target.clone().sub(this.pos);
+    desired.normalize();
+    desired.mult(this.maxSpeed);
+    const steer = desired.sub(this.vel);
+    steer.limit(this.maxForce);
+    return steer;
+  }
+
+  // Sky Boundaries: Gentle soft containment within upper sky zone
+  containSky(width: number, height: number): Vec2 {
+    const steer = new Vec2(0, 0);
+    const topMargin = height * 0.04;
+    const horizonLimit = height * 0.52; // Maintain altitude above green rolling hills
+
+    if (this.pos.y < topMargin) {
+      steer.y = (topMargin - this.pos.y) * 0.04;
+    } else if (this.pos.y > horizonLimit) {
+      steer.y = (horizonLimit - this.pos.y) * 0.05;
+    }
+
+    // Natural eastward cruising bias
+    if (this.vel.x < 0.6) {
+      steer.x += 0.04;
+    }
+
+    return steer;
+  }
+
+  // Pointer Evasion / Gentle Curiosity
+  reactToPointer(pointerX: number, pointerY: number, hasPointer: boolean): Vec2 {
+    if (!hasPointer) return new Vec2(0, 0);
+
+    const pointerPos = new Vec2(pointerX, pointerY);
+    const d = this.pos.dist(pointerPos);
+    const avoidDist = 140;
+
+    // Startle & evade pointer if cursor gets too close
+    if (d > 0 && d < avoidDist) {
+      const diff = this.pos.clone().sub(pointerPos);
+      diff.normalize();
+      // Strong repulsion inversely proportional to distance
+      diff.mult(this.maxSpeed * 1.8);
+      const steer = diff.sub(this.vel);
+      steer.limit(this.maxForce * 2.8);
+      return steer;
+    }
+    return new Vec2(0, 0);
+  }
+
+  // Shockwave Ripple Reaction
+  reactToRipples(ripples: ShockwaveRipple[]): Vec2 {
+    const steer = new Vec2(0, 0);
+    for (let i = 0; i < ripples.length; i++) {
+      const rip = ripples[i];
+      const d = this.pos.dist(new Vec2(rip.x, rip.y));
+      // Bird affected near the wavefront
+      const waveBand = Math.abs(d - rip.radius);
+      if (waveBand < 45 && rip.opacity > 0.1) {
+        const diff = this.pos.clone().sub(new Vec2(rip.x, rip.y));
+        diff.normalize();
+        diff.mult(rip.strength * this.maxSpeed * 2.2);
+        steer.add(diff);
+      }
+    }
+    return steer.limit(this.maxForce * 3.5);
+  }
+
+  // Update physical kinematics, flapping & banking
+  update(
+    boids: FlockBoid[],
+    width: number,
+    height: number,
+    pointerX: number,
+    pointerY: number,
+    hasPointer: boolean,
+    ripples: ShockwaveRipple[]
+  ) {
+    // 1. Calculate Reynolds Flocking Forces
+    const sep = this.separate(boids);
+    const ali = this.align(boids);
+    const coh = this.cohere(boids);
+    const skyBound = this.containSky(width, height);
+    const evade = this.reactToPointer(pointerX, pointerY, hasPointer);
+    const rippleImpulse = this.reactToRipples(ripples);
+
+    // Weights: authentic avian balance
+    sep.mult(1.75);
+    ali.mult(1.15);
+    coh.mult(0.95);
+    skyBound.mult(1.3);
+    evade.mult(2.4);
+
+    this.applyForce(sep);
+    this.applyForce(ali);
+    this.applyForce(coh);
+    this.applyForce(skyBound);
+    this.applyForce(evade);
+    this.applyForce(rippleImpulse);
+
+    // 2. Natural Wandering / Wind Fluctuation
+    const windNoise = new Vec2(
+      Math.sin(this.wingPhase * 0.4) * 0.02,
+      Math.cos(this.wingPhase * 0.3) * 0.025
+    );
+    this.applyForce(windNoise);
+
+    // 3. Integrate Velocity & Position
+    this.vel.add(this.acc);
+    this.vel.limit(this.maxSpeed);
+    this.pos.add(this.vel);
+    this.acc.mult(0); // Reset acceleration
+
+    // 4. Wrap horizontally around world bounds
+    if (this.pos.x > width + 60) {
+      this.pos.x = -60;
+      this.pos.y = height * 0.08 + Math.random() * (height * 0.38);
+    } else if (this.pos.x < -60) {
+      this.pos.x = width + 60;
+      this.pos.y = height * 0.08 + Math.random() * (height * 0.38);
+    }
+
+    // 5. Dynamic Banking (Roll Angle) Calculation based on Angular Steering
+    const currentHeading = this.vel.heading();
+    let dHeading = currentHeading - this.prevHeading;
+    // Normalize angle delta between -PI and PI
+    while (dHeading > Math.PI) dHeading -= Math.PI * 2;
+    while (dHeading < -Math.PI) dHeading += Math.PI * 2;
+
+    // Smoothly tilt bird into turn (up to 32 degrees)
+    const targetBank = Math.max(-0.55, Math.min(0.55, dHeading * 9.0));
+    this.bankAngle += (targetBank - this.bankAngle) * 0.14;
+    this.prevHeading = currentHeading;
+
+    // 6. Wing Flap Kinematics: Fast flapping during turns & bursts, graceful glides during steady flight
+    const speedRatio = this.vel.mag() / this.maxSpeed;
+    const isTurning = Math.abs(dHeading) > 0.015 || evade.mag() > 0.1;
+
+    if (isTurning || speedRatio > 0.88 || Math.random() < 0.02) {
+      this.isGliding = false;
+      this.wingSpeed = 0.22 + speedRatio * 0.12;
+    } else if (Math.random() < 0.015) {
+      // Periodic glide mode
+      this.isGliding = true;
+    }
+
+    if (!this.isGliding) {
+      this.wingPhase += this.wingSpeed;
+    } else {
+      // In glide mode, wings gently breathe in open crescent
+      this.wingPhase = Math.PI * 0.15 + Math.sin(Date.now() * 0.003) * 0.08;
+    }
+  }
+
+  // Draw Authentic Avian Swallow Silhouette with Articulated Flapping Wings & Scissor Tail
+  draw(ctx: CanvasRenderingContext2D) {
+    ctx.save();
+    ctx.translate(this.pos.x, this.pos.y);
+
+    const heading = this.vel.heading();
+    ctx.rotate(heading);
+
+    // Apply roll bank transformation
+    ctx.scale(1, Math.cos(this.bankAngle));
+
+    const s = this.size;
+    const flap = Math.sin(this.wingPhase);
+    // Dynamic wing flap deflection: upstroke fold vs downstroke sweep
+    const wingDip = flap * (s * 0.75);
+
+    // Color: Hand-inked charcoal / deep slate-black matching tactile civic ledger
+    const alpha = 0.72 + this.zDepth * 0.28;
+    ctx.fillStyle = `rgba(28, 36, 33, ${alpha})`;
+    ctx.strokeStyle = `rgba(28, 36, 33, ${alpha})`;
+    ctx.lineWidth = Math.max(1.2, 1.8 * this.zDepth);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    // 1. Sleek Aerodynamic Body (Fuselage)
+    ctx.beginPath();
+    // Beak tip
+    ctx.moveTo(s * 1.3, 0);
+    // Right flank to shoulder
+    ctx.quadraticCurveTo(s * 0.6, s * 0.22, 0, s * 0.25);
+    // Waist to rump
+    ctx.quadraticCurveTo(-s * 0.7, s * 0.18, -s * 1.1, 0);
+    // Left rump to waist
+    ctx.quadraticCurveTo(-s * 0.7, -s * 0.18, 0, -s * 0.25);
+    // Shoulder to beak
+    ctx.quadraticCurveTo(s * 0.6, -s * 0.22, s * 1.3, 0);
+    ctx.closePath();
+    ctx.fill();
+
+    // 2. Swallow Scissor Fork Tail
+    ctx.beginPath();
+    ctx.moveTo(-s * 0.9, 0);
+    // Left outer streamer
+    ctx.lineTo(-s * 2.1, -s * 0.45);
+    // Inner tail fork notch
+    ctx.lineTo(-s * 1.3, 0);
+    // Right outer streamer
+    ctx.lineTo(-s * 2.1, s * 0.45);
+    ctx.closePath();
+    ctx.fill();
+
+    // 3. Articulated Swept-back Wings with Primary Feathers
+    // Left Wing (Port)
+    ctx.beginPath();
+    ctx.moveTo(s * 0.35, -s * 0.1);
+    // Elbow curve
+    ctx.bezierCurveTo(
+      s * 0.1,
+      -s * 0.9 - wingDip * 0.4,
+      -s * 0.3,
+      -s * 1.5 - wingDip * 0.8,
+      -s * 0.7,
+      -s * 2.2 - wingDip
+    );
+    // Trailing feather edge
+    ctx.bezierCurveTo(
+      -s * 0.5,
+      -s * 1.4 - wingDip * 0.7,
+      -s * 0.1,
+      -s * 0.8 - wingDip * 0.3,
+      -s * 0.2,
+      -s * 0.1
+    );
+    ctx.closePath();
+    ctx.fill();
+
+    // Right Wing (Starboard)
+    ctx.beginPath();
+    ctx.moveTo(s * 0.35, s * 0.1);
+    // Elbow curve
+    ctx.bezierCurveTo(
+      s * 0.1,
+      s * 0.9 + wingDip * 0.4,
+      -s * 0.3,
+      s * 1.5 + wingDip * 0.8,
+      -s * 0.7,
+      s * 2.2 + wingDip
+    );
+    // Trailing feather edge
+    ctx.bezierCurveTo(
+      -s * 0.5,
+      s * 1.4 + wingDip * 0.7,
+      -s * 0.1,
+      s * 0.8 + wingDip * 0.3,
+      -s * 0.2,
+      s * 0.1
+    );
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.restore();
+  }
+}
+
+// --------------------------------------------------------------------------------
+// MAIN COMPONENT: ARTISTIC LANDSCAPE + CRAIG REYNOLDS BOIDS FLOCK
+// --------------------------------------------------------------------------------
+export const BoidsCanvas: React.FC<ArtisticLandscapeProps> = ({ 
+  opacity = 1,
+  flockSize = 38 
+}) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const mouseRef = useRef<{ x: number; y: number; targetX: number; targetY: number }>({
+  const mouseRef = useRef<{ 
+    x: number; 
+    y: number; 
+    targetX: number; 
+    targetY: number;
+    hasPointer: boolean;
+  }>({
     x: 0,
     y: 0,
     targetX: 0,
     targetY: 0,
+    hasPointer: false,
   });
+
+  const ripplesRef = useRef<ShockwaveRipple[]>([]);
+  const boidsRef = useRef<FlockBoid[]>([]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -52,22 +534,66 @@ export const BoidsCanvas: React.FC<ArtisticLandscapeProps> = ({ opacity = 1 }) =
     window.addEventListener('resize', handleResize);
 
     const handlePointerMove = (e: PointerEvent) => {
-      // Subtle parallax offset (-1 to 1)
-      mouseRef.current.targetX = (e.clientX / window.innerWidth) * 2 - 1;
-      mouseRef.current.targetY = (e.clientY / window.innerHeight) * 2 - 1;
+      mouseRef.current.targetX = e.clientX;
+      mouseRef.current.targetY = e.clientY;
+      mouseRef.current.hasPointer = true;
     };
+
+    const handlePointerLeave = () => {
+      mouseRef.current.hasPointer = false;
+    };
+
+    // User click or tap triggers an acoustic/wind disturbance ripple that scatters the flock
+    const triggerScatterRipple = (cx: number, cy: number) => {
+      ripplesRef.current.push({
+        x: cx,
+        y: cy,
+        radius: 8,
+        maxRadius: Math.min(width, height) * 0.55,
+        strength: 1.6,
+        opacity: 0.8,
+      });
+    };
+
+    const handlePointerDown = (e: PointerEvent) => {
+      triggerScatterRipple(e.clientX, e.clientY);
+    };
+
+    // Listen to global app-level scatter events (e.g. from Header button)
+    const handleGlobalScatter = (e: Event) => {
+      const customEvent = e as CustomEvent<{ x?: number; y?: number }>;
+      const cx = customEvent.detail?.x ?? width * 0.5;
+      const cy = customEvent.detail?.y ?? height * 0.25;
+      triggerScatterRipple(cx, cy);
+    };
+
     window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerleave', handlePointerLeave);
+    window.addEventListener('pointerdown', handlePointerDown);
+    window.addEventListener('shramik-scatter-flock', handleGlobalScatter as EventListener);
 
     // --------------------------------------------------------------------------------
-    // 1. SMOOTH FULLY WHITE CLOUDS (Pure white, continuous pillowy curves, NO black lines, NO circles)
+    // 1. INITIALIZE CRAIG REYNOLDS BOIDS FLOCK (38 Birds in 3 Organic Sub-flocks)
+    // --------------------------------------------------------------------------------
+    const boids: FlockBoid[] = [];
+    const count = flockSize || 38;
+    for (let i = 0; i < count; i++) {
+      // Group into 3 natural sub-flocks across the twilight sky
+      const subFlockId = i % 3;
+      boids.push(new FlockBoid(width, height, subFlockId));
+    }
+    boidsRef.current = boids;
+
+    // --------------------------------------------------------------------------------
+    // 2. SMOOTH FULLY WHITE CLOUDS (Continuous pillowy curves, NO black lines, NO circles)
     // --------------------------------------------------------------------------------
     const clouds: SmoothCloud[] = [
       {
         x: width * 0.12,
-        y: height * 0.12,
+        y: height * 0.11,
         speed: 0.16,
-        w: 220,
-        h: 75,
+        w: 230,
+        h: 76,
         opacity: 0.96,
         driftY: 0,
         variant: 0,
@@ -76,56 +602,43 @@ export const BoidsCanvas: React.FC<ArtisticLandscapeProps> = ({ opacity = 1 }) =
         x: width * 0.52,
         y: height * 0.07,
         speed: 0.12,
-        w: 260,
-        h: 88,
+        w: 270,
+        h: 90,
         opacity: 0.98,
         driftY: 1.4,
         variant: 2,
       },
       {
         x: width * 0.82,
-        y: height * 0.18,
+        y: height * 0.17,
         speed: 0.2,
-        w: 180,
-        h: 62,
+        w: 190,
+        h: 65,
         opacity: 0.94,
         driftY: 2.8,
         variant: 1,
       },
       {
         x: width * 0.04,
-        y: height * 0.28,
+        y: height * 0.26,
         speed: 0.14,
-        w: 210,
-        h: 70,
+        w: 220,
+        h: 72,
         opacity: 0.95,
         driftY: 4.1,
         variant: 0,
       },
       {
         x: width * 0.68,
-        y: height * 0.32,
+        y: height * 0.31,
         speed: 0.11,
-        w: 190,
-        h: 64,
+        w: 200,
+        h: 68,
         opacity: 0.92,
         driftY: 1.9,
         variant: 1,
       },
     ];
-
-    // --------------------------------------------------------------------------------
-    // 2. BIRDS / SWALLOWS
-    // --------------------------------------------------------------------------------
-    const birds: Bird[] = Array.from({ length: 8 }, (_, i) => ({
-      x: width * 0.22 + (i * 85) + Math.random() * 35,
-      y: height * 0.14 + (Math.sin(i) * 50) + Math.random() * 25,
-      vx: 0.42 + Math.random() * 0.3,
-      vy: (Math.random() - 0.5) * 0.15,
-      size: 8 + Math.random() * 3.5,
-      wingPhase: Math.random() * Math.PI * 2,
-      wingSpeed: 0.13 + Math.random() * 0.05,
-    }));
 
     // Grass marks on fields (pre-computed coordinates for performance)
     const grassMarks: Array<{ xRatio: number; yOffset: number; len: number; angle: number }> = [];
@@ -144,7 +657,6 @@ export const BoidsCanvas: React.FC<ArtisticLandscapeProps> = ({ opacity = 1 }) =
 
     // Draw Artistic 2D Pink-Yellowish Sky with Gradient
     const drawSky = () => {
-      // Artistic Pink into Yellowish Horizon Gradient
       const skyGrad = ctx.createLinearGradient(0, 0, 0, height * 0.75);
       skyGrad.addColorStop(0, '#eb789c'); // Rich warm storybook pink
       skyGrad.addColorStop(0.35, '#f49ab8'); // Radiant pastel pink
@@ -176,25 +688,16 @@ export const BoidsCanvas: React.FC<ArtisticLandscapeProps> = ({ opacity = 1 }) =
       const w = c.w;
       const h = c.h;
 
-      // Fully pure white cloud fill - NO black stroke, NO outlines
       ctx.fillStyle = `rgba(255, 255, 255, ${c.opacity})`;
-
       ctx.beginPath();
       if (c.variant === 0) {
-        // Variant 0: Elegant rolling cumulus with soft flat base and sculpted billowing top
         ctx.moveTo(-w * 0.46, h * 0.25);
-        // Smooth gentle base
         ctx.quadraticCurveTo(0, h * 0.28, w * 0.46, h * 0.25);
-        // Right flank curve
         ctx.bezierCurveTo(w * 0.53, h * 0.18, w * 0.54, -h * 0.12, w * 0.42, -h * 0.24);
-        // Top right swell
         ctx.bezierCurveTo(w * 0.38, -h * 0.52, w * 0.16, -h * 0.58, w * 0.05, -h * 0.38);
-        // Highest central swell
         ctx.bezierCurveTo(-w * 0.04, -h * 0.72, -w * 0.25, -h * 0.68, -w * 0.3, -h * 0.35);
-        // Left flank curve
         ctx.bezierCurveTo(-w * 0.44, -h * 0.42, -w * 0.54, -h * 0.12, -w * 0.46, h * 0.25);
       } else if (c.variant === 1) {
-        // Variant 1: Elongated, graceful, smooth stratus cloud
         ctx.moveTo(-w * 0.48, h * 0.2);
         ctx.quadraticCurveTo(0, h * 0.22, w * 0.48, h * 0.2);
         ctx.bezierCurveTo(w * 0.55, h * 0.12, w * 0.52, -h * 0.16, w * 0.36, -h * 0.28);
@@ -202,7 +705,6 @@ export const BoidsCanvas: React.FC<ArtisticLandscapeProps> = ({ opacity = 1 }) =
         ctx.bezierCurveTo(-w * 0.18, -h * 0.55, -w * 0.36, -h * 0.5, -w * 0.42, -h * 0.22);
         ctx.bezierCurveTo(-w * 0.54, -h * 0.12, -w * 0.55, h * 0.12, -w * 0.48, h * 0.2);
       } else {
-        // Variant 2: Grand fluffy pillowy formation with triple soft crests
         ctx.moveTo(-w * 0.46, h * 0.28);
         ctx.quadraticCurveTo(0, h * 0.3, w * 0.46, h * 0.28);
         ctx.bezierCurveTo(w * 0.54, h * 0.2, w * 0.55, -h * 0.08, w * 0.44, -h * 0.22);
@@ -214,7 +716,7 @@ export const BoidsCanvas: React.FC<ArtisticLandscapeProps> = ({ opacity = 1 }) =
       ctx.closePath();
       ctx.fill();
 
-      // Subtle, pure-white soft highlights for natural depth (NO black lines, pure white)
+      // Subtle highlights
       ctx.fillStyle = `rgba(255, 255, 255, 0.45)`;
       ctx.beginPath();
       ctx.ellipse(-w * 0.1, -h * 0.28, w * 0.26, h * 0.2, -0.08, 0, Math.PI * 2);
@@ -230,10 +732,9 @@ export const BoidsCanvas: React.FC<ArtisticLandscapeProps> = ({ opacity = 1 }) =
     // Draw Rolling Green Fields (Endless fields till the horizon)
     const drawFields = (parallaxX: number, parallaxY: number) => {
       const horizonY = height * 0.54 + parallaxY * 8;
-
       ctx.save();
 
-      // --- LAYER 1: Distant Horizon Ridge (Gentle olive green) ---
+      // Layer 1: Distant Horizon Ridge
       ctx.fillStyle = '#7a9632';
       ctx.strokeStyle = '#232b28';
       ctx.lineWidth = 2.4;
@@ -253,7 +754,7 @@ export const BoidsCanvas: React.FC<ArtisticLandscapeProps> = ({ opacity = 1 }) =
       ctx.fill();
       ctx.stroke();
 
-      // --- LAYER 2: Mid-distance Rolling Hill (Lush spring green) ---
+      // Layer 2: Mid-distance Rolling Hill
       const midHillY = horizonY + 35;
       ctx.fillStyle = '#8ca838';
       ctx.beginPath();
@@ -272,7 +773,7 @@ export const BoidsCanvas: React.FC<ArtisticLandscapeProps> = ({ opacity = 1 }) =
       ctx.fill();
       ctx.stroke();
 
-      // --- LAYER 3: Main Foreground Rolling Slope ---
+      // Layer 3: Main Foreground Rolling Slope
       const foreY = horizonY + 70;
       ctx.fillStyle = '#9cb63e';
       ctx.beginPath();
@@ -291,7 +792,7 @@ export const BoidsCanvas: React.FC<ArtisticLandscapeProps> = ({ opacity = 1 }) =
       ctx.fill();
       ctx.stroke();
 
-      // --- Winding Country Lane / Path ---
+      // Winding Country Lane / Path
       const houseX = width * 0.52 + parallaxX * 10;
       const houseY = foreY + 12;
 
@@ -352,7 +853,6 @@ export const BoidsCanvas: React.FC<ArtisticLandscapeProps> = ({ opacity = 1 }) =
       });
 
       ctx.restore();
-
       return { houseX, houseY };
     };
 
@@ -422,7 +922,6 @@ export const BoidsCanvas: React.FC<ArtisticLandscapeProps> = ({ opacity = 1 }) =
         const winH = 16;
         const shutterW = 4.5;
 
-        // Warm yellow glass with interior light
         ctx.fillStyle = '#fff4bd';
         ctx.fillRect(wx - winW / 2, wy - winH / 2, winW, winH);
         ctx.strokeRect(wx - winW / 2, wy - winH / 2, winW, winH);
@@ -443,12 +942,12 @@ export const BoidsCanvas: React.FC<ArtisticLandscapeProps> = ({ opacity = 1 }) =
         ctx.strokeRect(wx + winW / 2 + 1, wy - winH / 2, shutterW, winH);
       };
 
-      // Upper floor windows: left, center, right
+      // Upper floor windows
       drawWindow(-houseW * 0.28, houseH * 0.26);
       drawWindow(0, houseH * 0.26);
       drawWindow(houseW * 0.28, houseH * 0.26);
 
-      // Lower floor windows: left and right
+      // Lower floor windows
       drawWindow(-houseW * 0.28, houseH * 0.74);
       drawWindow(houseW * 0.28, houseH * 0.74);
 
@@ -483,49 +982,50 @@ export const BoidsCanvas: React.FC<ArtisticLandscapeProps> = ({ opacity = 1 }) =
       ctx.restore();
     };
 
-    // Draw Birds / Swallows Soaring
-    const updateAndDrawBirds = () => {
+    // Draw Expanding Wind/Acoustic Disturbance Ripples
+    const drawRipples = () => {
       ctx.save();
-      ctx.strokeStyle = '#232b28';
-      ctx.fillStyle = '#232b28';
-      ctx.lineWidth = 1.8;
-      ctx.lineCap = 'round';
+      const ripples = ripplesRef.current;
+      for (let i = ripples.length - 1; i >= 0; i--) {
+        const rip = ripples[i];
+        rip.radius += 5.5;
+        rip.opacity *= 0.94;
 
-      birds.forEach((b) => {
-        b.x += b.vx;
-        b.y += b.vy + Math.sin(b.wingPhase) * 0.35;
-        b.wingPhase += b.wingSpeed;
-
-        if (b.x > width + 40) b.x = -40;
-
-        const flap = Math.sin(b.wingPhase) * (b.size * 0.5);
-
+        ctx.strokeStyle = `rgba(255, 255, 255, ${rip.opacity * 0.55})`;
+        ctx.lineWidth = 2.2;
         ctx.beginPath();
-        ctx.moveTo(b.x - b.size, b.y - flap);
-        ctx.quadraticCurveTo(b.x - b.size * 0.4, b.y + flap * 0.5, b.x, b.y);
-        ctx.quadraticCurveTo(b.x + b.size * 0.4, b.y + flap * 0.5, b.x + b.size, b.y - flap);
+        ctx.arc(rip.x, rip.y, rip.radius, 0, Math.PI * 2);
         ctx.stroke();
-      });
 
+        ctx.strokeStyle = `rgba(28, 36, 33, ${rip.opacity * 0.35})`;
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.arc(rip.x, rip.y, Math.max(0, rip.radius - 8), 0, Math.PI * 2);
+        ctx.stroke();
+
+        if (rip.radius > rip.maxRadius || rip.opacity < 0.02) {
+          ripples.splice(i, 1);
+        }
+      }
       ctx.restore();
     };
 
     // --------------------------------------------------------------------------------
-    // 60FPS ANIMATION LOOP
+    // 60FPS REYNOLDS BOIDS SIMULATION & ANIMATION LOOP
     // --------------------------------------------------------------------------------
     const render = () => {
-      mouseRef.current.x += (mouseRef.current.targetX - mouseRef.current.x) * 0.05;
-      mouseRef.current.y += (mouseRef.current.targetY - mouseRef.current.y) * 0.05;
+      mouseRef.current.x += (mouseRef.current.targetX - mouseRef.current.x) * 0.08;
+      mouseRef.current.y += (mouseRef.current.targetY - mouseRef.current.y) * 0.08;
 
-      const pX = mouseRef.current.x * 20;
-      const pY = mouseRef.current.y * 12;
+      const pX = (mouseRef.current.x / width - 0.5) * 20;
+      const pY = (mouseRef.current.y / height - 0.5) * 12;
 
       ctx.clearRect(0, 0, width, height);
 
       // 1. Sky & Golden-Yellow Horizon
       drawSky();
 
-      // 2. Fully White Smooth Clouds (NO circles, NO black lines)
+      // 2. Fully White Smooth Clouds
       clouds.forEach((cloud) => {
         cloud.x += cloud.speed;
         cloud.driftY += 0.015;
@@ -533,13 +1033,29 @@ export const BoidsCanvas: React.FC<ArtisticLandscapeProps> = ({ opacity = 1 }) =
         drawCloud(cloud, pX);
       });
 
-      // 3. Birds soaring
-      updateAndDrawBirds();
+      // 3. Shockwave Ripples
+      drawRipples();
 
-      // 4. Rolling Green Fields & Winding Path
+      // 4. Update and Render Craig Reynolds Flying Bird Flock Boids
+      // Sort by depth so distant birds are layered behind foreground birds
+      const sortedBoids = [...boidsRef.current].sort((a, b) => a.zDepth - b.zDepth);
+      sortedBoids.forEach((boid) => {
+        boid.update(
+          boidsRef.current,
+          width,
+          height,
+          mouseRef.current.x,
+          mouseRef.current.y,
+          mouseRef.current.hasPointer,
+          ripplesRef.current
+        );
+        boid.draw(ctx);
+      });
+
+      // 5. Rolling Green Fields & Winding Path
       const { houseX, houseY } = drawFields(pX, pY);
 
-      // 5. Cottage House (Chimney completely removed)
+      // 6. Cottage House (Clean pitched roof, no chimney)
       drawHouse(houseX, houseY);
 
       animId = requestAnimationFrame(render);
@@ -551,15 +1067,18 @@ export const BoidsCanvas: React.FC<ArtisticLandscapeProps> = ({ opacity = 1 }) =
       cancelAnimationFrame(animId);
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerleave', handlePointerLeave);
+      window.removeEventListener('pointerdown', handlePointerDown);
+      window.removeEventListener('shramik-scatter-flock', handleGlobalScatter as EventListener);
     };
-  }, []);
+  }, [flockSize]);
 
   return (
     <canvas
       ref={canvasRef}
-      className="fixed inset-0 pointer-events-none z-0 no-print"
+      className="fixed inset-0 pointer-events-auto z-0 no-print cursor-crosshair"
       style={{ opacity, width: '100vw', height: '100vh' }}
-      aria-hidden="true"
+      aria-label="Artistic landscape with flying bird flock boids simulation"
     />
   );
 };

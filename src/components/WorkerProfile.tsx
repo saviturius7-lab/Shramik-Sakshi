@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
-import { WorkLog } from '../types';
-import { formatISTDateTime, generateAuditText, calculateWorkerSummary } from '../services/storage';
-import { Download, MapPin, FileText, CheckCircle2, Calendar, Printer, ShieldCheck, QrCode, X, Volume2, VolumeX } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { WorkLog, RegisteredLabour, SiteDeploymentOffer } from '../types';
+import { formatISTDateTime, generateAuditText, calculateWorkerSummary, getStoredLabourers } from '../services/storage';
+import { computeWorkerCredentials } from '../services/enterpriseCompliance';
+import { Download, MapPin, FileText, Calendar, Printer, ShieldCheck, X, Volume2, Award, CreditCard, Briefcase } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useLanguage } from '../context/LanguageContext';
 import { speakText, stopSpeaking } from '../utils/speech';
@@ -10,6 +11,9 @@ interface WorkerProfileProps {
   selectedWorker: string;
   workerLogs: WorkLog[];
   allLogs: WorkLog[];
+  workers?: RegisteredLabour[];
+  offers?: SiteDeploymentOffer[];
+  onRespondOffer?: (offerId: string, status: 'accepted' | 'declined') => Promise<void>;
   onOpenReceipt: (log: WorkLog) => void;
 }
 
@@ -17,11 +21,26 @@ export const WorkerProfile: React.FC<WorkerProfileProps> = ({
   selectedWorker,
   workerLogs,
   allLogs,
+  workers,
+  offers = [],
+  onRespondOffer,
   onOpenReceipt,
 }) => {
   const { language, t } = useLanguage();
   const [showPrintModal, setShowPrintModal] = useState(false);
   const [isSpeakingSummary, setIsSpeakingSummary] = useState(false);
+
+  const workerCredential = useMemo(() => {
+    if (selectedWorker === 'All Workers') return null;
+    const registry = workers && workers.length > 0 ? workers : getStoredLabourers();
+    const allCreds = computeWorkerCredentials(registry, allLogs);
+    return allCreds.find((c) => c.phoneNumber === selectedWorker) || null;
+  }, [selectedWorker, workers, allLogs]);
+
+  const workerOffers = useMemo(() => {
+    if (selectedWorker === 'All Workers') return [];
+    return offers.filter((o) => o.workerPhone === selectedWorker);
+  }, [offers, selectedWorker]);
 
   if (selectedWorker === 'All Workers') {
     return (
@@ -198,6 +217,102 @@ export const WorkerProfile: React.FC<WorkerProfileProps> = ({
         </div>
       </div>
 
+      {/* Pivot 3: Portable Skill Credential & Micro-Credit Strip */}
+      {workerCredential && (
+        <div className="border border-[#1c2421]/25 rounded-md p-3.5 sm:p-4 bg-[#fcfbf7] mb-5 space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#1c2421]/15 pb-2.5">
+            <div className="flex items-center gap-2">
+              <Award className="w-4 h-4 text-[#8c6721] shrink-0" />
+              <span className="text-xs font-black uppercase tracking-wider text-[#19231f]">
+                Verifiable Skill &amp; Micro-Credit Passport
+              </span>
+            </div>
+            <span className="font-mono text-xs font-bold text-[#1b4332]">
+              {workerCredential.tier} · {workerCredential.credentialHash}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono tabular-nums">
+            <div>
+              <span className="font-sans text-[11px] font-bold text-[#3d4a44] block">Trade &amp; Rate</span>
+              <span className="font-sans font-black text-[#19231f]">{workerCredential.trade}</span>
+            </div>
+            <div>
+              <span className="font-sans text-[11px] font-bold text-[#3d4a44] block">Verified Track Record</span>
+              <span className="font-black text-[#1b4332]">
+                {workerCredential.verifiedRatioPct}% ({workerCredential.totalLoggedHours}h)
+              </span>
+            </div>
+            <div>
+              <span className="font-sans text-[11px] font-bold text-[#3d4a44] block">Micro-Credit Limit</span>
+              <span className="font-black text-[#8c6721] inline-flex items-center gap-1">
+                <CreditCard className="w-3.5 h-3.5" />
+                ₹{workerCredential.microCreditLimitINR.toLocaleString('en-IN')}
+              </span>
+            </div>
+            <div>
+              <span className="font-sans text-[11px] font-bold text-[#3d4a44] block">BOCW 90d Welfare</span>
+              <span className="font-black text-[#1e7587]">
+                {workerCredential.bocwDaysProgressPct}% ({workerCredential.verifiedDays}/90d)
+              </span>
+            </div>
+          </div>
+
+          {workerOffers.length > 0 && (
+            <div className="pt-2.5 border-t border-dashed border-[#1c2421]/20 space-y-2">
+              <div className="text-[11px] font-black uppercase tracking-wider text-[#1b4332] flex items-center gap-1.5">
+                <Briefcase className="w-3.5 h-3.5" />
+                <span>Direct Employer Job Offers ({workerOffers.length})</span>
+              </div>
+              {workerOffers.map((offer) => (
+                <div
+                  key={offer.id}
+                  className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-white border border-[#1c2421]/20 rounded p-2.5 text-xs"
+                >
+                  <div>
+                    <span className="font-black text-[#19231f]">{offer.employerName}</span> ·{' '}
+                    <span className="text-[#3d4a44] font-semibold">
+                      {offer.projectSite} ({offer.durationDays}d from {offer.startDate})
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="font-mono font-black text-[#1b4332]">
+                      ₹{offer.offeredDailyWage}/day
+                    </span>
+                    {offer.status === 'pending' && onRespondOffer ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => onRespondOffer(offer.id, 'accepted')}
+                          className="px-2.5 py-1 text-[11px] font-bold rounded bg-[#1b4332] text-white cursor-pointer"
+                        >
+                          Accept
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onRespondOffer(offer.id, 'declined')}
+                          className="px-2.5 py-1 text-[11px] font-bold rounded border border-[#9b2226] text-[#9b2226] bg-white cursor-pointer"
+                        >
+                          Decline
+                        </button>
+                      </>
+                    ) : (
+                      <span
+                        className={`text-[11px] font-black uppercase ${
+                          offer.status === 'accepted' ? 'text-[#1b4332]' : 'text-[#9b2226]'
+                        }`}
+                      >
+                        {offer.status}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Visual Work Days Timeline */}
       <div className="vellum-sheet p-4 mb-5">
         <div className="flex flex-wrap items-center justify-between gap-2 mb-3 border-b border-[#1c2421]/15 pb-2">
@@ -265,7 +380,7 @@ export const WorkerProfile: React.FC<WorkerProfileProps> = ({
                   <div className="text-[11px] text-[#3d4a44] flex items-center gap-1 truncate font-medium">
                     <MapPin className="w-3 h-3 text-[#1b4332] shrink-0" />
                     <span className="truncate">
-                      {log.location_name || `${log.latitude?.toFixed(4)}, ${log.longitude?.toFixed(4)}`}
+                      {log.location_name || (log.latitude && log.longitude ? `${log.latitude.toFixed(6)}°, ${log.longitude.toFixed(6)}°` : 'Work Site')}
                     </span>
                   </div>
                 </div>

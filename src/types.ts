@@ -46,7 +46,7 @@ export interface WorkLog {
   check_out_time?: string;
   shift_status?: 'active_in_progress' | 'completed' | 'half_day' | 'overtime';
   gps_accuracy_meters?: number;
-  telemetry_source?: 'hardware_gps' | 'cell_triangulated' | 'manual_preset' | 'telegraph';
+  telemetry_source?: 'hardware_gps' | 'cell_triangulated' | 'manual_preset' | 'pin_adjusted' | 'telegraph';
 
   // Section 121 BSA / Estoppel 2-Hour Employer Acquiescence Window
   employer_notified_at?: string;
@@ -60,9 +60,25 @@ export interface WorkLog {
   work_photo_url?: string;
   work_photo_hash?: string;
 
-  // Section 63 BSA Custodian Certificate
+  // Section 63 BSA Custodian Certificate & Forensic Court Telemetry
   custodian_cert_id?: string;
   statutory_rule?: string;
+  altitude?: number | null;
+  altitude_accuracy?: number | null;
+  heading?: number | null;
+  speed?: number | null;
+  satellite_samples_count?: number;
+  initial_accuracy_meters?: number;
+  clock_skew_ms?: number;
+  mock_location_detected?: boolean;
+  evidence_grade?: 'JUDICIAL_GRADE' | 'EVIDENTIARY_GRADE' | 'CORROBORATIVE_GRADE' | 'INADMISSIBLE';
+  evidence_confidence_score?: number; // 0-100 forensic score
+  telemetry_sha256?: string;
+  device_fingerprint?: string;
+  network_carrier_type?: string;
+  geofence_status?: 'within_boundary' | 'perimeter_buffer' | 'outside_boundary';
+  geofence_distance_m?: number;
+  nearest_hub_name?: string;
 }
 
 export interface WorkerSummary {
@@ -130,4 +146,74 @@ export interface ShiftState {
   projectedWage?: number;
   hourlyRate?: number;
 }
+
+export interface RetentionHoldRecord {
+  siteKey: string;
+  contractorName: string;
+  held: boolean;
+  reason?: string;
+  updatedAt: string;
+  updatedByRole: UserRole;
+}
+
+export interface SiteComplianceSummary {
+  siteKey: string;
+  siteName: string;
+  contractorName: string;
+  totalLogs: number;
+  uniqueWorkers: number;
+  verifiedCount: number;
+  pendingCount: number;
+  disputedCount: number;
+  estoppelLockedCount: number;
+  anomalyFlags: string[];
+  formVReadinessPct: number;
+  grossWagesINR: number;
+  paidWagesINR: number;
+  jointLiabilityINR: number;
+  recommendedHoldbackINR: number;
+  retentionHeld: boolean;
+  logs: WorkLog[];
+}
+
+export type SkillTier = 'Master Artisan' | 'Verified Skilled' | 'Certified Active' | 'Provisional';
+
+export interface WorkerSkillCredential {
+  workerId: string;
+  name: string;
+  phoneNumber: string;
+  trade: string;
+  dailyWage: number;
+  worksite: string;
+  aadhaarLastFour?: string;
+  verifiedDays: number;
+  totalLoggedHours: number;
+  verifiedRatioPct: number;
+  avgGpsAccuracyM: number | null;
+  judicialGradeCount: number;
+  peerCorroboratedCount: number;
+  estoppelSealedCount: number;
+  disputedCount: number;
+  tier: SkillTier;
+  microCreditLimitINR: number;
+  insuranceEligible: boolean;
+  bocwDaysProgressPct: number;
+  credentialHash: string;
+  lastActiveAt: string;
+}
+
+export interface SiteDeploymentOffer {
+  id: string;
+  workerPhone: string;
+  workerName: string;
+  trade: string;
+  employerName: string;
+  projectSite: string;
+  offeredDailyWage: number;
+  durationDays: number;
+  startDate: string;
+  status: 'pending' | 'accepted' | 'declined';
+  createdAt: string;
+}
+
 

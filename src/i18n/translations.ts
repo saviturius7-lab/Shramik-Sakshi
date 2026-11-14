@@ -171,6 +171,8 @@ export interface TranslationDictionary {
   tabAttendanceList: string;
   tabWorkerPassbook: string;
   tabWorkMap: string;
+  tabComplianceConsole: string;
+  tabTalentBench: string;
 }
 
 export const TRANSLATIONS: Record<SupportedLanguage, TranslationDictionary> = {
@@ -181,7 +183,7 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationDictionary> = {
     verificationAct: "Daily Minimum Wage: ₹600",
     appTitle: "SHRAMIK SAKSHI • LABOUR REGISTER",
     immutableLedgerBadge: "100% PROTECTED",
-    appDescription: "Every worker deserves their full wage. Mark daily work here with 1 tap, get an official wage slip, and check total money earned without paperwork.",
+    appDescription: "Offline-first daily work & wage ledger with Section 63 BSA GNSS proof, Principal Employer BOCW compliance audits, and portable worker skill & micro-credit passports.",
     syncRegisterBtn: "Refresh Register",
     telexConsoleBtn: "Full Terminal",
     wireStatus: "Status: System Online & Ready",
@@ -344,6 +346,8 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationDictionary> = {
     tabAttendanceList: "Attendance Register",
     tabWorkerPassbook: "Worker Passbook",
     tabWorkMap: "Work Map",
+    tabComplianceConsole: "EPC Compliance",
+    tabTalentBench: "Talent & Credentials",
   },
 
   hi: {
@@ -507,6 +511,8 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationDictionary> = {
     tabAttendanceList: "हाजिरी रजिस्टर (Register)",
     tabWorkerPassbook: "मजदूर पासबुक (Passbook)",
     tabWorkMap: "काम का नक्शा (Map)",
+    tabComplianceConsole: "कंपनी ऑडिट (EPC Compliance)",
+    tabTalentBench: "कौशल व रोजगार (Talent)",
   },
 
   kn: {
@@ -670,6 +676,8 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationDictionary> = {
     tabAttendanceList: "ಹಾಜರಾತಿ ಪಟ್ಟಿ (Register)",
     tabWorkerPassbook: "ಕಾರ್ಮಿಕ ಪಾಸ್‌ಬುಕ್ (Passbook)",
     tabWorkMap: "ಕೆಲಸದ ನಕ್ಷೆ (Map)",
+    tabComplianceConsole: "ಕಂಪನಿ ಆಡಿಟ್ (Compliance)",
+    tabTalentBench: "ಕೌಶಲ್ಯ ಮತ್ತು ಉದ್ಯೋಗ (Talent)",
   },
 
   te: {
@@ -833,6 +841,8 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationDictionary> = {
     tabAttendanceList: "హాజరు పట్టిక (Register)",
     tabWorkerPassbook: "కార్మికుల పాస్‌ಬುక్ (Passbook)",
     tabWorkMap: "పని మ్యాప్ (Map)",
+    tabComplianceConsole: "కంపెనీ ఆడిట్ (Compliance)",
+    tabTalentBench: "నైపుణ్యం & ఉపాధి (Talent)",
   },
 
   ta: {
@@ -996,6 +1006,8 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationDictionary> = {
     tabAttendanceList: "வருகை பட்டியல் (Register)",
     tabWorkerPassbook: "தொழிலாளர் பாஸ்புக் (Passbook)",
     tabWorkMap: "வேலை வரைபடம் (Map)",
+    tabComplianceConsole: "நிறுவன தணிக்கை (Compliance)",
+    tabTalentBench: "திறன் & வேலைவாய்ப்பு (Talent)",
   },
 
   ml: {
@@ -1159,5 +1171,7 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationDictionary> = {
     tabAttendanceList: "ഹാജർ പട്ടിക (Register)",
     tabWorkerPassbook: "തൊഴിലാളി പാസ്ബുക്ക് (Passbook)",
     tabWorkMap: "ജോലി ഭൂപടം (Map)",
+    tabComplianceConsole: "കമ്പനി ഓഡിറ്റ് (Compliance)",
+    tabTalentBench: "നൈപുണ്യവും തൊഴിലും (Talent)",
   },
 };

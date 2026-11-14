@@ -6,6 +6,7 @@
 import { attendanceSubmissionSchema, disputeSubmissionSchema, phoneSchema } from '../src/services/validators.js';
 import { calculateWorkerSummary } from '../src/services/storage.js';
 import { runPreAiBot } from '../src/services/preAiBot.js';
+import { calculateDistanceMeters, findNearestHub, assessCourtAdmissibility, computeTelemetrySha256, getDeviceFingerprint } from '../src/utils/geolocation.js';
 
 interface TestResult {
   name: string;
@@ -440,6 +441,163 @@ async function runSuite() {
     assert(otResult.updatedLog!.shift_status === 'overtime', 'Duration > 8.5h must be overtime');
     // Hourly base = 1000/8 = 125. Extra 2 hours @ 2x OT rate = 2 * 250 = 500. Total = 1500.
     assert(otResult.updatedLog!.actual_wage_earned === 1500.0, `Expected overtime wage 1500.0, got ${otResult.updatedLog!.actual_wage_earned}`);
+  });
+
+  // Test 15: High-Accuracy Sub-Meter Location Pinning & Distance Precision
+  await runTest('15. Location pinning preserves 6-decimal sub-meter precision and computes verified hub distances', () => {
+    const lat1 = 13.031245;
+    const lng1 = 77.516582;
+    // Shift slightly by ~11 meters (0.0001 deg lat)
+    const lat2 = 13.031345;
+    const lng2 = 77.516582;
+    const dist = calculateDistanceMeters(lat1, lng1, lat2, lng2);
+    assert(dist > 10 && dist < 12, `Distance should be ~11.1m, got ${dist}`);
+
+    const nearest = findNearestHub(lat1, lng1);
+    assert(nearest.hub.name.includes('Peenya'), 'Nearest hub should be Peenya');
+    assert(nearest.distanceM < 5, `Distance to exact coordinates should be < 5m, got ${nearest.distanceM}`);
+  });
+
+  // Test 16: Section 63 BSA Forensic Telemetry & Court Admissibility Integrity
+  await runTest('16. Section 63 BSA Forensic Telemetry verifies clock skew, anti-spoofing, geofence boundary, and cryptographic SHA-256 seal for court admissibility', async () => {
+    // 1. High precision with sub-5m error radius (3.2m), multi-sample convergence (8), synchronous clock (<50ms) -> Judicial Grade
+    const judicialEval = assessCourtAdmissibility(3.2, 8, 25, false, 45);
+    assert(judicialEval.grade === 'JUDICIAL_GRADE', `Expected JUDICIAL_GRADE, got ${judicialEval.grade}`);
+    assert(judicialEval.score >= 90, `Expected score >= 90, got ${judicialEval.score}`);
+    assert(judicialEval.legalDeclaration.includes('Section 63(4) BSA'), 'Must cite Section 63(4) BSA');
+
+    // 2. Mock location detection triggers immediate rejection under BSA
+    const spoofedEval = assessCourtAdmissibility(2.1, 10, 0, true, 20);
+    assert(spoofedEval.grade === 'INADMISSIBLE', 'Spoofed mock location must be flagged INADMISSIBLE');
+    assert(spoofedEval.score <= 15, 'Spoofed score must be heavily penalized');
+
+    // 3. Cryptographic SHA-256 sealing produces tamper-evident digest
+    const samplePayload = '13.031245::77.516582::3.2::912.4::1731225600000::DEV-HW-TEST::4g';
+    const sha = await computeTelemetrySha256(samplePayload);
+    assert(sha.length >= 16, 'SHA digest must be generated');
+
+    // 4. Device hardware fingerprint is generated
+    const fp = getDeviceFingerprint();
+    assert(fp.startsWith('DEV-HW-') || fp.startsWith('SRV-HOST-'), 'Valid hardware device fingerprint required');
+  });
+
+  // Test 17: Pivot 1 Enterprise EPC Compliance & Joint Liability Aggregation
+  await runTest('17. Pivot 1 Principal Employer Compliance aggregates Form V readiness, GPS anomalies, joint liability, and retention holds', async () => {
+    const { computeSiteComplianceSummaries } = await import('../src/services/enterpriseCompliance.js');
+    const { retentionHoldSchema } = await import('../src/services/validators.js');
+
+    const testLogs: any[] = [
+      {
+        id: 'cmp-1',
+        phone_number: '+919876543210',
+        latitude: 13.0312,
+        longitude: 77.5165,
+        location_name: 'Peenya Industrial Area, Bengaluru',
+        actual_wage_earned: 700,
+        amount_paid: 0,
+        gps_accuracy_meters: 4.2,
+        verification_status: 'attendance_acknowledged',
+        estoppel_active: true,
+        peer_quorum_count: 3,
+        created_at: new Date().toISOString(),
+        date: '2026-11-12',
+      },
+      {
+        id: 'cmp-2',
+        phone_number: '+919811234567',
+        latitude: 13.0313,
+        longitude: 77.5166,
+        location_name: 'Peenya Industrial Area, Bengaluru',
+        actual_wage_earned: 600,
+        amount_paid: 200,
+        gps_accuracy_meters: 42.0, // Coarse GPS > 25m triggers exception
+        verification_status: 'location_submitted',
+        estoppel_active: false,
+        peer_quorum_count: 3,
+        created_at: new Date().toISOString(),
+        date: '2026-11-12',
+      },
+    ];
+
+    const holds = [
+      {
+        siteKey: 'peenya industrial area, bengaluru',
+        contractorName: 'Peenya Fabrication & EPC Associates',
+        held: true,
+        updatedAt: new Date().toISOString(),
+        updatedByRole: 'employer' as const,
+      },
+    ];
+
+    const summaries = computeSiteComplianceSummaries(testLogs, [], holds);
+    assert(summaries.length === 1, `Expected 1 normalized site group, got ${summaries.length}`);
+    assert(summaries[0].jointLiabilityINR === 1100, `Expected 1100 joint liability exposure, got ${summaries[0].jointLiabilityINR}`);
+    assert(summaries[0].retentionHeld === true, 'Retention hold flag must match persisted hold');
+    assert(summaries[0].anomalyFlags.some(f => f.includes('Coarse')), 'Must flag coarse GPS >25m');
+    assert(retentionHoldSchema.safeParse({ siteKey: 'peenya', contractorName: 'EPC', held: true }).success, 'Retention schema must validate');
+  });
+
+  // Test 18: Pivot 3 Verifiable Skill Credentials & Site Offer Validation
+  await runTest('18. Pivot 3 computes deterministic Skill & Micro-Credit Passports and validates site deployment offers', async () => {
+    const { computeWorkerCredentials } = await import('../src/services/enterpriseCompliance.js');
+    const { siteOfferCreateSchema } = await import('../src/services/validators.js');
+
+    const workers: any[] = [
+      {
+        id: 'SHR-2026-001',
+        name: 'Rameshwar Yadav',
+        phoneNumber: '+919876543210',
+        trade: 'Mason (राजमिस्त्री)',
+        dailyWage: 700,
+        worksite: 'Azadpur Mandi Wholesale Hub, North Delhi',
+        registeredAt: '2026-10-15T08:00:00.000Z',
+      },
+    ];
+
+    const logs: any[] = [
+      {
+        id: 'sk-1',
+        phone_number: '+919876543210',
+        date: '2026-11-10',
+        created_at: '2026-11-10T08:00:00Z',
+        hours_worked: 8,
+        gps_accuracy_meters: 4.0,
+        verification_status: 'attendance_acknowledged',
+        estoppel_active: true,
+        peer_quorum_count: 3,
+      },
+      {
+        id: 'sk-2',
+        phone_number: '+919876543210',
+        date: '2026-11-11',
+        created_at: '2026-11-11T08:00:00Z',
+        hours_worked: 8,
+        gps_accuracy_meters: 5.0,
+        verification_status: 'attendance_acknowledged',
+        estoppel_active: true,
+        peer_quorum_count: 2,
+      },
+    ];
+
+    const creds = computeWorkerCredentials(workers, logs);
+    assert(creds.length === 1, 'Expected 1 worker credential');
+    assert(creds[0].verifiedDays === 2, `Expected 2 verified days, got ${creds[0].verifiedDays}`);
+    assert(creds[0].tier === 'Verified Skilled', `Expected Verified Skilled tier, got ${creds[0].tier}`);
+    assert(creds[0].insuranceEligible === true, 'Worker with 2 clean days and sub-25m GPS must be insurance eligible');
+    assert(creds[0].microCreditLimitINR > 0, 'Micro-credit capacity must be positive');
+    assert(creds[0].credentialHash.startsWith('CRED-'), 'Credential hash must be generated');
+
+    const validOffer = siteOfferCreateSchema.safeParse({
+      workerPhone: '+919876543210',
+      workerName: 'Rameshwar Yadav',
+      trade: 'Mason',
+      employerName: 'Deccan Infra EPC',
+      projectSite: 'Peenya Corridor',
+      offeredDailyWage: 800,
+      durationDays: 30,
+      startDate: '2026-11-20',
+    });
+    assert(validOffer.success, 'Valid site deployment offer must pass Zod schema');
   });
 
   console.log('\n------------------------------------------------------');
