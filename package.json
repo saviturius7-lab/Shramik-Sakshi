@@ -1,7 +1,8 @@
 {
   "name": "shramik-sakshi",
+  "description": "Offline-first Section 63 BSA civic wage ledger, Enterprise EPC BOCW compliance console, fluid GNSS GIS map, and verifiable worker skill & micro-credit passports.",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
